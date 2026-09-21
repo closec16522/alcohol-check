@@ -32,9 +32,6 @@
   
   <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  
-  <!-- Google Identity Services (One Tap & Google Sign-In) -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- Face-api.js for 1:1 Face Recognition Matching -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
@@ -60,11 +57,11 @@
         </div>
       </div>
       <div class="flex items-center space-x-2">
-        <a href="register.html" class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-blue-200 border border-white/20 transition">
-          <i class="fa-solid fa-user-plus mr-1 text-[11px]"></i>
+        <button type="button" onclick="promptAdminRegisterPasscode()" class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-blue-200 border border-white/20 transition">
+          <i class="fa-solid fa-lock mr-1 text-[11px]"></i>
           <span class="hidden sm:inline">ลงทะเบียนพนักงาน</span>
           <span class="sm:hidden">ลงทะเบียน</span>
-        </a>
+        </button>
       </div>
     </div>
     
@@ -137,24 +134,23 @@
 
       <div class="space-y-4 max-w-md mx-auto">
         
-        <!-- Google One Tap / Quick Sign In Button Container -->
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center space-y-2">
-          <span class="text-xs text-slate-600 font-medium block">
-            <i class="fa-brands fa-google text-blue-600 mr-1"></i> ยืนยันตัวตนด่วนผ่าน Google ในมือถือ:
+        <!-- Quick One-Tap Login Bar for Drivers (แสดงเฉพาะ Email เดียวที่เคยกรอกล่าสุด) -->
+        <div id="quickLoginBox" class="hidden bg-blue-50/80 border border-blue-200 rounded-xl p-3 text-center space-y-2">
+          <span class="text-xs text-blue-900 font-semibold block">
+            <i class="fa-solid fa-bolt text-amber-500 mr-1"></i> เข้าสู่ระบบด่วน 1-คลิก (สำหรับคนขับประจำรถ):
           </span>
-          <div class="flex justify-center" id="g_id_onload"
-               data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
-               data-context="signin"
-               data-ux_mode="popup"
-               data-callback="handleGoogleLoginCallback"
-               data-auto_prompt="true">
+          <div class="flex justify-center pt-1">
+            <button type="button" id="btnQuickRecentEmail" onclick="quickSelectLastDriver()"
+                    class="px-4 py-2 bg-white hover:bg-blue-100 active:scale-95 text-blue-900 text-xs font-bold rounded-xl border border-blue-300 shadow-sm transition flex items-center space-x-2 cursor-pointer">
+              <i class="fa-solid fa-circle-user text-blue-600 text-sm"></i>
+              <span id="quickRecentEmailText">-</span>
+            </button>
           </div>
-          <div class="g_id_signin flex justify-center" data-type="standard" data-shape="pill" data-theme="outline" data-text="continue_with" data-size="medium" data-logo_alignment="left"></div>
         </div>
 
-        <div class="flex items-center my-3 text-xs text-slate-400">
+        <div id="quickLoginDivider" class="hidden flex items-center my-3 text-xs text-slate-400">
           <div class="flex-1 border-t border-slate-200"></div>
-          <span class="px-3">หรือ ค้นหาด้วยอีเมล / รหัสพนักงาน</span>
+          <span class="px-3">หรือ ระบุอีเมลอื่น</span>
           <div class="flex-1 border-t border-slate-200"></div>
         </div>
 
@@ -218,8 +214,10 @@
         <!-- Link to Register Page if new driver -->
         <div class="text-center pt-2">
           <p class="text-xs text-slate-500">
-            ยังไม่เคยลงทะเบียน หรือต้องการอัปเดตรูปหน้าตรง? 
-            <a href="register.html" class="text-blue-600 font-bold hover:underline">ลงทะเบียนใบหน้าต้นแบบที่นี่</a>
+            ต้องการลงทะเบียนพนักงานใหม่? 
+            <button type="button" onclick="promptAdminRegisterPasscode()" class="text-blue-600 font-bold hover:underline ml-1 inline-flex items-center">
+              <i class="fa-solid fa-lock text-[10px] mr-1"></i> ลงทะเบียน (ใส่รหัสเฉพาะเจ้าหน้าที่)
+            </button>
           </p>
         </div>
       </div>
@@ -414,11 +412,39 @@
           <p id="safetyNotice" class="text-[11px] text-emerald-300/90 bg-emerald-950/40 p-2 rounded-lg border border-emerald-900/50">
             ✓ ระดับแอลกอฮอล์เป็นศูนย์ (0.00 mg%) พนักงานพร้อมปฏิบัติหน้าที่ขับขี่ปลอดภัย
           </p>
+
+          <!-- Quick Preset Buttons for Accuracy (กรณีหน้าจอ LCD แสงสะท้อน) -->
+          <div class="pt-2.5 border-t border-slate-800 space-y-2">
+            <span class="text-[11px] text-slate-300 font-semibold block text-center">
+              ปุ่มลัดยืนยันผลตรวจ (รองรับกรณีหน้าจอเป็นรอยหรือแสงสะท้อน):
+            </span>
+            <div class="grid grid-cols-3 gap-2">
+              <button type="button" onclick="setAlcoholValuePreset(0.00)"
+                      class="py-2.5 px-2 bg-emerald-900/90 hover:bg-emerald-800 active:scale-95 text-emerald-200 border border-emerald-500/60 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 shadow-sm">
+                <i class="fa-solid fa-circle-check text-xs"></i>
+                <span>0.00 (ผ่าน)</span>
+              </button>
+              <button type="button" onclick="setAlcoholValuePreset(0.01)"
+                      class="py-2.5 px-2 bg-red-950/90 hover:bg-red-900 active:scale-95 text-red-200 border border-red-500/60 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 shadow-sm">
+                <i class="fa-solid fa-triangle-exclamation text-xs"></i>
+                <span>&gt; 0.01 (ไม่ผ่าน)</span>
+              </button>
+              <button type="button" onclick="promptCustomAlcoholInput()"
+                      class="py-2.5 px-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-blue-300 border border-blue-400/50 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 shadow-sm">
+                <i class="fa-solid fa-pen-to-square text-xs"></i>
+                <span>ระบุเอง</span>
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-400 text-center flex items-center justify-center pt-0.5">
+              <i class="fa-solid fa-shield-halved text-blue-400 mr-1.5"></i>
+              <span>รูปถ่ายหน้าปัดสดนี้จะถูกจัดเก็บลง Google Drive เพื่อตรวจสอบย้อนหลังเสมอ</span>
+            </p>
+          </div>
         </div>
 
-        <!-- Next to Step 4 Button -->
-        <button type="button" id="btnNextToStep4" disabled
-                class="w-full py-3 px-4 bg-slate-300 text-slate-500 font-semibold rounded-xl text-sm transition shadow flex items-center justify-center space-x-2 cursor-not-allowed">
+        <!-- Next to Step 4 Button (No HTML disabled to guarantee iOS Safari tap dispatch) -->
+        <button type="button" id="btnNextToStep4" onclick="handleNextToStep4()"
+                class="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
           <span>ถัดไป: สรุปและบันทึกส่งระบบ</span>
           <i class="fa-solid fa-arrow-right text-xs"></i>
         </button>

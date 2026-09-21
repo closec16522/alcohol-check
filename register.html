@@ -32,9 +32,6 @@
   
   <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  
-  <!-- Google Identity Services (Sign in with Google) -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <!-- Face-api.js for 128-d Face Descriptors -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
@@ -76,19 +73,6 @@
 
     <!-- Registration Card -->
     <section class="glass-panel p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
-
-      <!-- Google One Tap / Quick Autofill Container -->
-      <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-center space-y-2">
-        <span class="text-xs text-slate-500 font-medium block">ตัวช่วยกรอกข้อมูลอัตโนมัติจากบัญชี Google ในมือถือ:</span>
-        <div class="flex justify-center" id="g_id_onload"
-             data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
-             data-context="signin"
-             data-ux_mode="popup"
-             data-callback="handleGoogleCredentialResponse"
-             data-auto_prompt="false">
-        </div>
-        <div class="g_id_signin flex justify-center" data-type="standard" data-shape="pill" data-theme="outline" data-text="signin_with" data-size="medium" data-logo_alignment="left"></div>
-      </div>
 
       <!-- Form Inputs -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
@@ -153,8 +137,8 @@
               <i class="fa-solid fa-camera"></i>
             </div>
             <p class="text-xs font-semibold mb-3">เปิดกล้องหน้าเพื่อบันทึกใบหน้าต้นแบบ</p>
-            <button type="button" id="btnStartMasterCamera"
-                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow transition flex items-center space-x-1.5">
+            <button type="button" id="btnStartMasterCamera" onclick="startMasterCamera()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-semibold rounded-xl shadow transition flex items-center space-x-1.5 cursor-pointer">
               <i class="fa-solid fa-video"></i>
               <span>เปิดกล้องหน้าสด</span>
             </button>
@@ -170,12 +154,12 @@
 
         <!-- Camera Controls -->
         <div class="flex justify-center space-x-3 mt-3 max-w-xs mx-auto">
-          <button type="button" id="btnCaptureMaster" disabled
+          <button type="button" id="btnCaptureMaster" onclick="captureMasterFace()" disabled
                   class="flex-1 py-2.5 px-4 bg-slate-300 text-slate-500 font-bold rounded-xl text-xs transition shadow flex items-center justify-center space-x-2 cursor-not-allowed">
             <i class="fa-solid fa-camera"></i>
             <span>กดถ่ายรูปใบหน้า</span>
           </button>
-          <button type="button" id="btnRetakeMaster" class="hidden py-2 px-3 bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium rounded-xl text-xs transition">
+          <button type="button" id="btnRetakeMaster" onclick="retakeMasterFace()" class="hidden py-2 px-3 bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium rounded-xl text-xs transition">
             <i class="fa-solid fa-arrows-rotate mr-1"></i> ถ่ายใหม่
           </button>
         </div>
@@ -183,8 +167,8 @@
 
       <!-- Submit Button -->
       <div class="pt-3 border-t border-slate-200">
-        <button type="button" id="btnSubmitRegistration"
-                class="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2">
+        <button type="button" id="btnSubmitRegistration" onclick="submitRegistration()"
+                class="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
           <i class="fa-solid fa-user-check text-base"></i>
           <span>บันทึกการลงทะเบียนพนักงาน</span>
         </button>

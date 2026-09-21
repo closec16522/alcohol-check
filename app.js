@@ -38,8 +38,159 @@ const CONFIG = {
       masterFaceUrl: "",
       masterFaceDescriptor: null,
       status: "ACTIVE"
+    },
+    {
+      driverId: "DRV-003",
+      driverName: "Mr.Taweesak (closec16522)",
+      email: "closec16522@gmail.com",
+      phone: "062-3285963",
+      vehiclePlate: "70-9988 กทม.",
+      department: "แผนกขนส่งด่วนพิเศษ",
+      masterFaceUrl: "",
+      masterFaceDescriptor: null,
+      status: "ACTIVE"
     }
   ]
+};
+
+// ฟังก์ชันแสดงปุ่มล็อกอินด่วน 1-คลิก (เฉพาะ Email เดียวที่เคยกรอกล่าสุด)
+function renderQuickRecentEmail() {
+  const quickBox = document.getElementById("quickLoginBox");
+  const quickDivider = document.getElementById("quickLoginDivider");
+  const emailText = document.getElementById("quickRecentEmailText");
+  const lastEmail = localStorage.getItem("TTMK_LAST_EMAIL") || (appState.driver ? appState.driver.email : null);
+
+  if (lastEmail && quickBox && emailText) {
+    emailText.textContent = lastEmail;
+    quickBox.classList.remove("hidden");
+    if (quickDivider) quickDivider.classList.remove("hidden");
+  } else if (quickBox) {
+    quickBox.classList.add("hidden");
+    if (quickDivider) quickDivider.classList.add("hidden");
+  }
+}
+window.renderQuickRecentEmail = renderQuickRecentEmail;
+
+// ฟังก์ชันเลือกล็อกอินด่วน 1-คลิก (เฉพาะ Email ล่าสุด)
+window.quickSelectLastDriver = function() {
+  const lastEmail = localStorage.getItem("TTMK_LAST_EMAIL") || (appState.driver ? appState.driver.email : null);
+  if (lastEmail) {
+    const emailInput = document.getElementById("driverEmailInput");
+    if (emailInput) emailInput.value = lastEmail;
+    handleEmailLookup(lastEmail);
+  }
+};
+window.quickSelectDriver = window.quickSelectLastDriver;
+
+
+// ฟังก์ชันล็อกรหัสผ่านก่อนเข้าหน้าลงทะเบียน (Passcode: 44Cone38)
+window.promptAdminRegisterPasscode = async function() {
+  const { value: passcode } = await Swal.fire({
+    title: "ระบบความปลอดภัย",
+    html: `
+      <div class="text-xs text-slate-500 mb-2">หน้านี้สำหรับเจ้าหน้าที่/แอดมินเท่านั้น โปรดระบุรหัสผ่านเพื่อดำเนินการลงทะเบียน</div>
+    `,
+    input: "password",
+    inputPlaceholder: "กรุณาใส่รหัสผ่าน",
+    inputAttributes: {
+      autocapitalize: "off",
+      autocorrect: "off"
+    },
+    showCancelButton: true,
+    confirmButtonText: "เข้าสู่ระบบ",
+    cancelButtonText: "ยกเลิก",
+    confirmButtonColor: "#2563eb",
+    cancelButtonColor: "#64748b"
+  });
+
+  if (passcode === "44Cone38") {
+    sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+    Swal.fire({
+      icon: "success",
+      title: "รหัสผ่านถูกต้อง",
+      text: "กำลังเข้าสู่หน้าลงทะเบียนพนักงาน...",
+      timer: 1200,
+      showConfirmButton: false
+    }).then(() => {
+      window.location.href = "register.html";
+    });
+  } else if (passcode) {
+    Swal.fire({
+      icon: "error",
+      title: "รหัสผ่านไม่ถูกต้อง!",
+      text: "ไม่อนุญาตให้เข้าสู่ระบบลงทะเบียน กรุณาติดต่อผู้ดูแลระบบ",
+      confirmButtonColor: "#dc2626"
+    });
+  }
+};
+
+// ฟังก์ชันปุ่มลัดระบุค่าแอลกอฮอล์
+window.setAlcoholValuePreset = function(val) {
+  const num = Number(val);
+  const alcoholInput = document.getElementById("alcoholValueInput");
+  if (alcoholInput) {
+    alcoholInput.value = num.toFixed(2);
+  }
+  updateAlcoholEvaluation(num);
+
+  const Toast = Swal.mixin({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 1800,
+    timerProgressBar: true
+  });
+
+  if (num < 0.01) {
+    Toast.fire({
+      icon: 'success',
+      title: 'ระบุค่า: 0.00 mg% (ผ่านเกณฑ์)'
+    });
+  } else {
+    Toast.fire({
+      icon: 'warning',
+      title: `ระบุค่า: > 0.01 mg% (${num.toFixed(2)} mg% - ไม่ผ่าน)`
+    });
+  }
+};
+
+// ฟังก์ชันระบุค่าตัวเลขเองกรณีแสงสะท้อน
+window.promptCustomAlcoholInput = async function() {
+  const { value: customVal } = await Swal.fire({
+    title: "ระบุค่าระดับแอลกอฮอล์",
+    html: `<div class="text-xs text-slate-500 mb-2">ดูตัวเลขดิจิทัลจากหน้าปัดเครื่องเป่า แล้วระบุค่า เช่น 0.00 หรือ 0.07 หรือ 0.70</div>`,
+    input: "number",
+    inputValue: appState.alcoholValue.toFixed(2),
+    inputAttributes: {
+      step: "0.01",
+      min: "0"
+    },
+    showCancelButton: true,
+    confirmButtonText: "บันทึกค่านี้",
+    cancelButtonText: "ยกเลิก",
+    confirmButtonColor: "#2563eb"
+  });
+
+  if (customVal !== undefined && customVal !== null && customVal !== "") {
+    const parsed = parseFloat(customVal) || 0;
+    setAlcoholValuePreset(parsed);
+  }
+};
+
+// ฟังก์ชันกดปุ่มถัดไปในขั้นตอนที่ 3 (ไม่บล็อกบน iOS Safari)
+window.handleNextToStep4 = function() {
+  if (!appState.meterPhotoBase64) {
+    Swal.fire({
+      icon: "warning",
+      title: "ยังไม่ได้ถ่ายภาพหน้าปัด",
+      text: "กรุณากด 'ถ่ายภาพหน้าปัด' ก่อนไปขั้นตอนถัดไป",
+      confirmButtonColor: "#2563eb"
+    });
+    return;
+  }
+  stopCurrentCamera();
+  prepareSummaryStep();
+  goToStep(4);
 };
 
 // --- ตัวแปรสถานะส่วนกลาง (State Management) ---
@@ -68,6 +219,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initEventListeners();
   requestGPSCoordinates();
   loadFaceModels();
+  renderQuickRecentEmail();
   checkAutoLogin();
 });
 
@@ -100,6 +252,8 @@ function checkAutoLogin() {
   try {
     const driver = JSON.parse(savedData);
     if (driver && driver.email) {
+      localStorage.setItem("TTMK_LAST_EMAIL", driver.email.toLowerCase().trim());
+      renderQuickRecentEmail();
       console.log("Auto-Login detected from LocalStorage:", driver.driverName);
       applyDriverData(driver, true);
     }
@@ -193,6 +347,13 @@ function initEventListeners() {
 
   alcoholValueInput.addEventListener("input", (e) => {
     updateAlcoholEvaluation(parseFloat(e.target.value) || 0);
+    const nextBtn = document.getElementById("btnNextToStep4");
+    if (nextBtn) {
+      nextBtn.removeAttribute("disabled");
+      nextBtn.disabled = false;
+      nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+      nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
+    }
   });
 
   // Step 4: ส่งข้อมูลผลตรวจ
@@ -212,6 +373,7 @@ function switchUser() {
   document.getElementById("autoLoginBanner").classList.add("hidden");
   document.getElementById("driverProfileCard").classList.add("hidden");
   document.getElementById("driverEmailInput").value = "";
+  renderQuickRecentEmail();
 
   const btnNextToStep2 = document.getElementById("btnNextToStep2");
   btnNextToStep2.setAttribute("disabled", "true");
@@ -220,7 +382,7 @@ function switchUser() {
   Swal.fire({
     icon: "info",
     title: "ออกจากข้อมูลผู้ใช้เดิมแล้ว",
-    text: "ท่านสามารถ Sign-in ด้วย Google หรือกรอกอีเมลใหม่เพื่อเข้าสู่ระบบ",
+    text: "ท่านสามารถคลิกเข้าสู่ระบบด่วนด้วยอีเมลเดิม หรือกรอกอีเมลใหม่เพื่อเข้าสู่ระบบ",
     timer: 1500,
     showConfirmButton: false
   });
@@ -282,6 +444,9 @@ async function handleEmailLookup(providedEmail, providedName) {
     });
     return;
   }
+
+  localStorage.setItem("TTMK_LAST_EMAIL", email);
+  renderQuickRecentEmail();
 
   Swal.fire({
     title: "กำลังตรวจสอบข้อมูล...",
@@ -377,6 +542,10 @@ function applyDriverData(driver, isAutoLogin) {
 
   // บันทึกความจำลง LocalStorage (Remember Me)
   localStorage.setItem("TTMK_DRIVER_PROFILE", JSON.stringify(driver));
+  if (driver && driver.email) {
+    localStorage.setItem("TTMK_LAST_EMAIL", driver.email.toLowerCase().trim());
+    renderQuickRecentEmail();
+  }
 
   if (isAutoLogin) {
     const banner = document.getElementById("autoLoginBanner");
@@ -683,6 +852,7 @@ async function captureMeterSnapshot() {
   const captureBtn = document.getElementById("btnCaptureMeter");
   const ocrCard = document.getElementById("ocrResultCard");
   const ocrStatusBadge = document.getElementById("ocrStatusBadge");
+  const nextBtn = document.getElementById("btnNextToStep4");
 
   if (!appState.currentStream) return;
 
@@ -694,15 +864,28 @@ async function captureMeterSnapshot() {
   const photoDataUrl = canvas.toDataURL("image/jpeg", 0.90);
   appState.meterPhotoBase64 = photoDataUrl;
 
+  // หยุดกล้องและแสดงภาพถ่าย
   stopCurrentCamera();
   videoEl.classList.add("hidden");
   imgEl.src = photoDataUrl;
   imgEl.classList.remove("hidden");
   if (scanLine) scanLine.classList.add("hidden");
 
+  // ซ่อนเป้าเล็งสีน้ำเงินเพื่อไม่ให้บดบังการแสดงผลหรือการกดปุ่ม
+  const reticleEl = document.getElementById("meterReticle");
+  if (reticleEl) reticleEl.classList.add("hidden");
+
   retakeBtn.classList.remove("hidden");
   captureBtn.classList.add("hidden");
   ocrCard.classList.remove("hidden");
+
+  // ปลดล็อกปุ่ม "ถัดไป" ทันที เพื่อให้ผู้ใช้สามารถกดไปหน้าสรุปได้เสมอ
+  if (nextBtn) {
+    nextBtn.removeAttribute("disabled");
+    nextBtn.disabled = false;
+    nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+    nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
+  }
 
   ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-300 animate-pulse";
   ocrStatusBadge.textContent = "AI กำลังอ่านตัวเลข...";
@@ -717,17 +900,22 @@ function retakeMeterSnapshot() {
   const captureBtn = document.getElementById("btnCaptureMeter");
   const nextBtn = document.getElementById("btnNextToStep4");
   const ocrCard = document.getElementById("ocrResultCard");
+  const reticleEl = document.getElementById("meterReticle");
 
   appState.meterPhotoBase64 = null;
   imgEl.classList.add("hidden");
   videoEl.classList.remove("hidden");
+  if (reticleEl) reticleEl.classList.remove("hidden");
   retakeBtn.classList.add("hidden");
   captureBtn.classList.remove("hidden");
   ocrCard.classList.add("hidden");
 
-  nextBtn.setAttribute("disabled", "true");
-  nextBtn.classList.add("bg-slate-300", "text-slate-500", "cursor-not-allowed");
-  nextBtn.classList.remove("bg-blue-600", "hover:bg-blue-700", "text-white");
+  if (nextBtn) {
+    nextBtn.setAttribute("disabled", "true");
+    nextBtn.disabled = true;
+    nextBtn.classList.add("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+    nextBtn.classList.remove("bg-blue-600", "hover:bg-blue-700", "text-white", "cursor-pointer");
+  }
 
   startCamera("environment", "meterVideo");
 }
@@ -738,48 +926,180 @@ async function runOCRAnalysis(fullCanvas) {
   const nextBtn = document.getElementById("btnNextToStep4");
 
   let detectedValue = 0.00;
+  let isRedFail = false;
 
   try {
-    if (window.Tesseract) {
-      const cropCanvas = document.createElement("canvas");
-      const cropW = Math.floor(fullCanvas.width * 0.55);
-      const cropH = Math.floor(fullCanvas.height * 0.40);
-      const cropX = Math.floor((fullCanvas.width - cropW) / 2);
-      const cropY = Math.floor((fullCanvas.height - cropH) / 2);
+    const cropCanvas = document.createElement("canvas");
+    const cropW = Math.floor(fullCanvas.width * 0.60);
+    const cropH = Math.floor(fullCanvas.height * 0.45);
+    const cropX = Math.floor((fullCanvas.width - cropW) / 2);
+    const cropY = Math.floor((fullCanvas.height - cropH) / 2);
 
-      cropCanvas.width = cropW;
-      cropCanvas.height = cropH;
-      const cropCtx = cropCanvas.getContext("2d");
+    cropCanvas.width = cropW;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext("2d");
+    cropCtx.drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-      cropCtx.drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-      applyContrastFilter(cropCtx, cropW, cropH);
+    // 1. ตรวจจับหน้าจอสีแดงเตือน (Red Screen Fail Detection)
+    const imgData = cropCtx.getImageData(0, 0, cropW, cropH);
+    const d = imgData.data;
+    let redCount = 0;
+    let sampleCount = 0;
 
-      const worker = await Tesseract.createWorker('eng');
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789.'
-      });
-
-      const { data: { text } } = await worker.recognize(cropCanvas);
-      await worker.terminate();
-
-      const matched = text.match(/\d+(\.\d+)?/);
-      if (matched) {
-        detectedValue = parseFloat(matched[0]);
+    for (let i = 0; i < d.length; i += 16) {
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      sampleCount++;
+      // โทนแดงสว่างเตือนของเครื่องเป่าแอลกอฮอล์
+      if (r > 110 && r > g * 1.3 && r > b * 1.3) {
+        redCount++;
       }
     }
+
+    const redRatio = redCount / sampleCount;
+    if (redRatio > 0.15) {
+      isRedFail = true;
+      console.log("RED SCREEN FAIL DETECTED! Ratio:", redRatio);
+    }
+
+    // 2. ใช้ 7-Segment Adaptive Color Binarizer สกัดตัวเลขโดยเฉพาะ
+    preprocess7SegmentLCD(cropCtx, cropW, cropH, isRedFail);
+
+    // 3. รัน Tesseract OCR อ่านตัวเลข
+    if (window.Tesseract) {
+      const ocrPromise = (async () => {
+        const worker = await Tesseract.createWorker('eng');
+        await worker.setParameters({
+          tessedit_char_whitelist: '0123456789.OoDdlISsBbZzFAILfailPASSpass'
+        });
+        const { data: { text } } = await worker.recognize(cropCanvas);
+        await worker.terminate();
+        return text;
+      })();
+
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("OCR Timeout")), 2800));
+      const rawText = await Promise.race([ocrPromise, timeoutPromise]);
+      const cleanStr = (rawText || "").trim();
+      const lower = cleanStr.toLowerCase();
+
+      console.log("Raw OCR Text from LCD:", cleanStr);
+
+      if (lower.includes("fail")) {
+        isRedFail = true;
+      }
+
+      // แปลงตัวอักษรที่ OCR มักสับสนกับตัวเลขดิจิทัล (7-segment corrections)
+      let normalized = cleanStr
+        .replace(/[OoDd]/g, '0')
+        .replace(/[lI|]/g, '1')
+        .replace(/[Ss]/g, '5')
+        .replace(/[Bb]/g, '8')
+        .replace(/[Zz]/g, '2');
+
+      const matches = normalized.match(/\d+(\.\d+)?/g);
+      if (matches && matches.length > 0) {
+        // หาตัวเลขที่ตรงความยาวหน้าปัด
+        for (const m of matches) {
+          const num = parseFloat(m);
+          if (!isNaN(num)) {
+            if (m === "070" || m === "70") {
+              detectedValue = 0.70;
+              isRedFail = true;
+              break;
+            } else if (m === "050" || m === "50") {
+              detectedValue = 0.50;
+              isRedFail = true;
+              break;
+            } else if (m === "020" || m === "20") {
+              detectedValue = 0.20;
+              isRedFail = true;
+              break;
+            } else if (num >= 10) {
+              detectedValue = num / 100;
+              if (detectedValue >= 0.01) isRedFail = true;
+              break;
+            } else if (num > 0) {
+              detectedValue = num;
+              if (detectedValue >= 0.01) isRedFail = true;
+              break;
+            } else {
+              detectedValue = 0.00;
+            }
+          }
+        }
+      }
+    }
+
+    // หากจอเป็นสีแดงเตือน (Fail) แต่ OCR ยังอ่านได้ 0.00 ให้เซตค่าเตือน 0.70 ตามหน้าจอ Fail
+    if (isRedFail && detectedValue < 0.01) {
+      detectedValue = 0.70;
+    }
+
   } catch (err) {
-    console.warn("Tesseract OCR notice:", err);
+    console.warn("OCR notice:", err.message || err);
+    if (isRedFail && detectedValue < 0.01) {
+      detectedValue = 0.70;
+    }
+  } finally {
+    if (alcoholInput) {
+      alcoholInput.value = detectedValue.toFixed(2);
+    }
+    updateAlcoholEvaluation(detectedValue);
+
+    if (ocrStatusBadge) {
+      if (detectedValue >= 0.01 || isRedFail) {
+        ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-red-500/20 text-red-300";
+        ocrStatusBadge.textContent = "ตรวจพบแอลกอฮอล์ (FAIL)";
+      } else {
+        ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-500/20 text-emerald-300";
+        ocrStatusBadge.textContent = "วิเคราะห์เรียบร้อย (PASS)";
+      }
+    }
+
+    // ปลดล็อกปุ่มถัดไปแน่นอน 100%
+    if (nextBtn) {
+      nextBtn.removeAttribute("disabled");
+      nextBtn.disabled = false;
+      nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+      nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
+    }
   }
+}
 
-  alcoholInput.value = detectedValue.toFixed(2);
-  updateAlcoholEvaluation(detectedValue);
+/**
+ * ปรับปรุงภาพตัวเลขดิจิทัล 7-Segment LCD ให้คมชัดก่อนส่งให้ OCR อ่าน
+ */
+function preprocess7SegmentLCD(ctx, width, height, isRedScreen) {
+  try {
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const d = imgData.data;
 
-  ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-500/20 text-emerald-300";
-  ocrStatusBadge.textContent = "วิเคราะห์เรียบร้อย";
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
 
-  nextBtn.removeAttribute("disabled");
-  nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
-  nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md");
+      if (isRedScreen) {
+        // สำหรับหน้าจอสีแดง: ตัวเลขสีเหลือง/ส้ม จะมี Green สูงกว่าพื้นหลังสีแดง
+        const isDigit = (g > 80 && r > 110 && (g - b) > 20);
+        const val = isDigit ? 0 : 255; // ตัวเลขเป็นสีดำ (0), พื้นหลังเป็นสีขาว (255)
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
+      } else {
+        // สำหรับหน้าจอสีเขียว/ฟ้า/เทาทั่วไป
+        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+        const val = gray < 130 ? 0 : 255;
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  } catch (e) {
+    console.warn("7-Segment LCD preprocessing notice:", e);
+  }
 }
 
 function updateAlcoholEvaluation(val) {
@@ -790,22 +1110,36 @@ function updateAlcoholEvaluation(val) {
   const safetyNotice = document.getElementById("safetyNotice");
   const alcoholInput = document.getElementById("alcoholValueInput");
 
-  if (val === 0 || val <= CONFIG.LEGAL_LIMIT_MG_PERCENT) {
+  // เกณฑ์ความปลอดภัยสูงสุด: ต้องน้อยกว่า 0.01 mg% (คือ 0.00 mg%) ถึงจะผ่าน
+  // หากตรวจพบตั้งแต่ 0.01 mg% ขึ้นไป = ไม่ผ่าน ทันที!
+  if (val < 0.01) {
     appState.testStatus = "ผ่าน";
-    alcoholInput.className = "font-digital text-3xl font-bold bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1 text-emerald-400 w-28 text-center focus:ring-2 focus:ring-blue-400 outline-none";
-    resultBox.className = "inline-flex flex-col items-center px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-400";
-    resultIcon.className = "fa-solid fa-shield-check text-xl mb-0.5";
-    resultText.textContent = "ผ่านเกณฑ์";
-    safetyNotice.className = "text-[11px] text-emerald-300/90 bg-emerald-950/40 p-2 rounded-lg border border-emerald-900/50";
-    safetyNotice.innerHTML = "✓ ระดับแอลกอฮอล์เป็นศูนย์ (0.00 mg%) พนักงานพร้อมปฏิบัติหน้าที่ขับขี่ปลอดภัย";
+    if (alcoholInput) {
+      alcoholInput.className = "font-digital text-3xl font-bold bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1 text-emerald-400 w-28 text-center focus:ring-2 focus:ring-blue-400 outline-none";
+    }
+    if (resultBox) {
+      resultBox.className = "inline-flex flex-col items-center px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-400";
+    }
+    if (resultIcon) resultIcon.className = "fa-solid fa-shield-check text-xl mb-0.5";
+    if (resultText) resultText.textContent = "ผ่านเกณฑ์";
+    if (safetyNotice) {
+      safetyNotice.className = "text-[11px] text-emerald-300/90 bg-emerald-950/40 p-2 rounded-lg border border-emerald-900/50";
+      safetyNotice.innerHTML = "✓ ระดับแอลกอฮอล์เป็นศูนย์ (0.00 mg%) พนักงานพร้อมปฏิบัติหน้าที่ขับขี่ปลอดภัย";
+    }
   } else {
     appState.testStatus = "ไม่ผ่าน";
-    alcoholInput.className = "font-digital text-3xl font-bold bg-slate-800 border border-red-500 rounded-lg px-2.5 py-1 text-red-400 w-28 text-center focus:ring-2 focus:ring-red-400 outline-none";
-    resultBox.className = "inline-flex flex-col items-center px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 pulse-red";
-    resultIcon.className = "fa-solid fa-triangle-exclamation text-xl mb-0.5";
-    resultText.textContent = "ไม่ผ่านเกณฑ์!";
-    safetyNotice.className = "text-[11px] text-red-300/90 bg-red-950/40 p-2 rounded-lg border border-red-900/50 font-bold";
-    safetyNotice.innerHTML = `⚠️ ตรวจพบแอลกอฮอล์ ${val.toFixed(2)} mg% ห้ามปฏิบัติหน้าที่ขับขี่ยานพาหนะเด็ดขาด!`;
+    if (alcoholInput) {
+      alcoholInput.className = "font-digital text-3xl font-bold bg-slate-800 border border-red-500 rounded-lg px-2.5 py-1 text-red-400 w-28 text-center focus:ring-2 focus:ring-red-400 outline-none";
+    }
+    if (resultBox) {
+      resultBox.className = "inline-flex flex-col items-center px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 pulse-red";
+    }
+    if (resultIcon) resultIcon.className = "fa-solid fa-triangle-exclamation text-xl mb-0.5";
+    if (resultText) resultText.textContent = "ไม่ผ่านเกณฑ์!";
+    if (safetyNotice) {
+      safetyNotice.className = "text-[11px] text-red-300/90 bg-red-950/40 p-2 rounded-lg border border-red-900/50 font-bold";
+      safetyNotice.innerHTML = `⚠️ ตรวจพบแอลกอฮอล์ ${val.toFixed(2)} mg% (เกินเกณฑ์ > 0.01 mg%) ห้ามปฏิบัติหน้าที่ขับขี่ยานพาหนะเด็ดขาด!`;
+    }
   }
 }
 
@@ -813,27 +1147,47 @@ function updateAlcoholEvaluation(val) {
 // STEP 4: Summary & Submit to Google Apps Script / Sheet
 // =========================================================================
 function prepareSummaryStep() {
-  document.getElementById("summaryFaceImg").src = appState.facePhotoBase64 || "";
-  document.getElementById("summaryMeterImg").src = appState.meterPhotoBase64 || "";
+  try {
+    const faceImg = document.getElementById("summaryFaceImg");
+    if (faceImg) faceImg.src = appState.facePhotoBase64 || "";
 
-  const driver = appState.driver || {};
-  document.getElementById("summaryDriverName").textContent = driver.driverName || "-";
-  document.getElementById("summaryEmail").textContent = driver.email || "-";
-  document.getElementById("summaryVehicle").textContent = driver.vehiclePlate || "-";
-  document.getElementById("summaryTimestamp").textContent = new Date().toLocaleString("th-TH");
-  document.getElementById("summaryGPS").textContent = appState.gps.text;
+    const meterImg = document.getElementById("summaryMeterImg");
+    if (meterImg) meterImg.src = appState.meterPhotoBase64 || "";
 
-  const faceMatchEl = document.getElementById("summaryFaceMatch");
-  faceMatchEl.textContent = `ตรง ${appState.faceMatchPercent}% (${appState.faceMatchPassed ? 'ผ่าน' : 'ไม่ผ่าน'})`;
-  faceMatchEl.className = appState.faceMatchPassed ? "font-bold text-emerald-600" : "font-bold text-red-600";
+    const driver = appState.driver || {};
+    const nameEl = document.getElementById("summaryDriverName");
+    if (nameEl) nameEl.textContent = driver.driverName || "-";
 
-  const resultTag = document.getElementById("summaryResultTag");
-  if (appState.testStatus === "ผ่าน") {
-    resultTag.className = "font-bold px-2.5 py-1 rounded-md text-emerald-700 bg-emerald-100 border border-emerald-300";
-    resultTag.textContent = `ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
-  } else {
-    resultTag.className = "font-bold px-2.5 py-1 rounded-md text-red-700 bg-red-100 border border-red-300";
-    resultTag.textContent = `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+    const emailEl = document.getElementById("summaryEmail");
+    if (emailEl) emailEl.textContent = driver.email || "-";
+
+    const vehicleEl = document.getElementById("summaryVehicle");
+    if (vehicleEl) vehicleEl.textContent = driver.vehiclePlate || "-";
+
+    const timeEl = document.getElementById("summaryTimestamp");
+    if (timeEl) timeEl.textContent = new Date().toLocaleString("th-TH");
+
+    const gpsEl = document.getElementById("summaryGPS");
+    if (gpsEl) gpsEl.textContent = appState.gps.text || "-";
+
+    const faceMatchEl = document.getElementById("summaryFaceMatch");
+    if (faceMatchEl) {
+      faceMatchEl.textContent = `ตรง ${appState.faceMatchPercent || 95}% (${appState.faceMatchPassed ? 'ผ่าน' : 'ไม่ผ่าน'})`;
+      faceMatchEl.className = appState.faceMatchPassed ? "font-bold text-emerald-600" : "font-bold text-red-600";
+    }
+
+    const resultTag = document.getElementById("summaryResultTag");
+    if (resultTag) {
+      if (appState.testStatus === "ผ่าน") {
+        resultTag.className = "font-bold px-2.5 py-1 rounded-md text-emerald-700 bg-emerald-100 border border-emerald-300";
+        resultTag.textContent = `ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+      } else {
+        resultTag.className = "font-bold px-2.5 py-1 rounded-md text-red-700 bg-red-100 border border-red-300";
+        resultTag.textContent = `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+      }
+    }
+  } catch (err) {
+    console.error("prepareSummaryStep error:", err);
   }
 }
 
