@@ -38,6 +38,7 @@ function initialSetup() {
     "Alcohol_Value",
     "Status",
     "Face_Match_Percent",
+    "Report_Card_URL",
     "Face_Photo_URL",
     "Meter_Photo_URL",
     "GPS_Coordinates",
@@ -351,7 +352,15 @@ function doPost(e) {
     var method = payload.verificationMethod || "Face 1:1 Matching & AI OCR";
     var remarks = payload.remarks || "-";
 
-    // จัดเก็บภาพลง Google Drive
+    // 1. จัดเก็บภาพรายงานสรุปรวม (Composite Report Card Image)
+    var reportPhotoUrl = "-";
+    if (payload.reportImageBase64) {
+      var reportFileName = "REPORT_" + driverId + "_" + Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd_HHmmss") + ".jpg";
+      var reportFile = saveBase64ToDrive(payload.reportImageBase64, reportFileName, folder);
+      reportPhotoUrl = reportFile.getUrl();
+    }
+
+    // 2. จัดเก็บภาพถ่ายใบหน้า Check-in
     var facePhotoUrl = "-";
     if (payload.faceImageBase64) {
       var faceFileName = "FACE_" + driverId + "_" + Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd_HHmmss") + ".jpg";
@@ -359,6 +368,7 @@ function doPost(e) {
       facePhotoUrl = faceFile.getUrl();
     }
     
+    // 3. จัดเก็บภาพหน้าปัดเครื่องเป่า
     var meterPhotoUrl = "-";
     if (payload.meterImageBase64) {
       var meterFileName = "METER_" + driverId + "_" + Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd_HHmmss") + ".jpg";
@@ -366,41 +376,81 @@ function doPost(e) {
       meterPhotoUrl = meterFile.getUrl();
     }
     
+    // ตรวจสอบคอลัมน์ Report_Card_URL ในแผ่นชีตเดิม หากยังไม่มีให้แทรกคอลัมน์ให้อัตโนมัติ
+    var lastCol = Math.max(1, logSheet.getLastColumn());
+    var headers = logSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var hasReportCol = headers.indexOf("Report_Card_URL") !== -1;
+    if (!hasReportCol && headers.length >= 11) {
+      logSheet.insertColumnAfter(11);
+      logSheet.getRange(1, 12).setValue("Report_Card_URL")
+              .setBackground("#1E3A8A")
+              .setFontColor("#FFFFFF")
+              .setFontWeight("bold")
+              .setHorizontalAlignment("center");
+      logSheet.setColumnWidth(12, 180);
+      hasReportCol = true;
+    }
+
     // เพิ่มแถวบันทึกลง Sheet
-    logSheet.appendRow([
-      fullTimestamp,
-      logDate,
-      logTime,
-      driverId,
-      driverName,
-      email,
-      phone,
-      vehiclePlate,
-      alcoholVal,
-      status,
-      matchPercent,
-      facePhotoUrl,
-      meterPhotoUrl,
-      gps,
-      mapsUrl,
-      method,
-      remarks
-    ]);
+    if (hasReportCol) {
+      logSheet.appendRow([
+        fullTimestamp,
+        logDate,
+        logTime,
+        driverId,
+        driverName,
+        email,
+        phone,
+        vehiclePlate,
+        alcoholVal,
+        status,
+        matchPercent,
+        reportPhotoUrl,
+        facePhotoUrl,
+        meterPhotoUrl,
+        gps,
+        mapsUrl,
+        method,
+        remarks
+      ]);
+    } else {
+      logSheet.appendRow([
+        fullTimestamp,
+        logDate,
+        logTime,
+        driverId,
+        driverName,
+        email,
+        phone,
+        vehiclePlate,
+        alcoholVal,
+        status,
+        matchPercent,
+        facePhotoUrl,
+        meterPhotoUrl,
+        gps,
+        mapsUrl,
+        method,
+        remarks
+      ]);
+    }
     
     var lastRow = logSheet.getLastRow();
+    var colCount = hasReportCol ? 18 : 17;
     if (status === "ไม่ผ่าน" || parseFloat(alcoholVal) >= 0.01) {
-      logSheet.getRange(lastRow, 1, 1, 17).setBackground("#FEE2E2"); // สีแดงอ่อน
+      logSheet.getRange(lastRow, 1, 1, colCount).setBackground("#FEE2E2"); // สีแดงอ่อน
     } else {
-      logSheet.getRange(lastRow, 1, 1, 17).setBackground("#ECFDF5"); // สีเขียวอ่อน
+      logSheet.getRange(lastRow, 1, 1, colCount).setBackground("#ECFDF5"); // สีเขียวอ่อน
     }
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      message: "บันทึกผลตรวจและรูปภาพสำเร็จ",
+      message: "บันทึกผลตรวจและรูปภาพรายงานลง Google Drive สำเร็จ",
       timestamp: fullTimestamp,
       status: status,
       alcoholValue: alcoholVal,
       faceMatchPercent: matchPercent,
+      reportPhotoUrl: reportPhotoUrl,
       facePhotoUrl: facePhotoUrl,
       meterPhotoUrl: meterPhotoUrl
     })).setMimeType(ContentService.MimeType.JSON);

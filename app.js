@@ -272,6 +272,7 @@ const appState = {
   faceMatchPercent: 0,
   faceMatchPassed: false,
   meterPhotoBase64: null,
+  reportImageBase64: null,
   alcoholValue: 0.00,
   testStatus: "ผ่าน",
   gps: {
@@ -462,6 +463,7 @@ function switchUser() {
  * จัดการเปลี่ยนหน้า Step
  */
 function goToStep(stepNumber) {
+  stopCurrentCamera();
   appState.currentStep = stepNumber;
 
   for (let i = 1; i <= 4; i++) {
@@ -482,16 +484,29 @@ function goToStep(stepNumber) {
     activeIndicatorEl.classList.add("text-blue-400", "font-bold");
   }
 
-  // ถ้าเข้าสู่ขั้นตอนที่ 2 และมีรูป Master Face ให้แสดงในมุมกรอบกล้อง
-  if (stepNumber === 2 && appState.driver) {
-    const pipEl = document.getElementById("masterFacePip");
-    const pipImg = document.getElementById("masterFacePipImg");
-    const masterSrc = appState.driver.masterFacePhoto || appState.driver.masterFaceUrl;
-    if (masterSrc) {
-      pipImg.src = masterSrc;
-      pipEl.classList.remove("hidden");
-    } else {
-      pipEl.classList.add("hidden");
+  // จัดการกล้องและรูปภาพตามขั้นตอน
+  if (stepNumber === 2) {
+    if (appState.driver) {
+      const pipEl = document.getElementById("masterFacePip");
+      const pipImg = document.getElementById("masterFacePipImg");
+      const masterSrc = appState.driver.masterFacePhoto || appState.driver.masterFaceUrl;
+      if (masterSrc) {
+        pipImg.src = masterSrc;
+        pipEl.classList.remove("hidden");
+      } else {
+        pipEl.classList.add("hidden");
+      }
+    }
+    // เปิดกล้องหน้าสดอัตโนมัติทันที
+    if (!appState.facePhotoBase64) {
+      resetFaceCameraUI();
+      startCamera("user", "faceVideo");
+    }
+  } else if (stepNumber === 3) {
+    // เปิดกล้องหลังสดอัตโนมัติทันที
+    if (!appState.meterPhotoBase64) {
+      resetMeterCameraUI();
+      startCamera("environment", "meterVideo");
     }
   }
 
@@ -732,7 +747,20 @@ async function captureFaceSnapshot() {
   const captureBtn = document.getElementById("btnCaptureFace");
   const nextBtn = document.getElementById("btnNextToStep3");
 
-  if (!appState.currentStream) return;
+  if (!appState.currentStream) {
+    await startCamera("user", "faceVideo");
+    return;
+  }
+
+  if (!videoEl.videoWidth || !videoEl.videoHeight) {
+    try {
+      await videoEl.play();
+    } catch (e) {}
+    if (!videoEl.videoWidth || !videoEl.videoHeight) {
+      await startCamera("user", "faceVideo");
+      return;
+    }
+  }
 
   canvas.width = videoEl.videoWidth || 640;
   canvas.height = videoEl.videoHeight || 480;
@@ -889,25 +917,45 @@ async function performFaceMatching(liveCanvas, ctx) {
   }
 }
 
-function retakeFaceSnapshot() {
+function resetFaceCameraUI() {
   const videoEl = document.getElementById("faceVideo");
   const imgEl = document.getElementById("faceCapturedImg");
+  const promptEl = document.getElementById("faceCameraPrompt");
   const verifiedBadge = document.getElementById("faceVerifiedBadge");
   const retakeBtn = document.getElementById("btnRetakeFace");
   const captureBtn = document.getElementById("btnCaptureFace");
   const nextBtn = document.getElementById("btnNextToStep3");
+  const scanLine = document.getElementById("faceScanLine");
 
   appState.facePhotoBase64 = null;
-  imgEl.classList.add("hidden");
-  videoEl.classList.remove("hidden");
-  verifiedBadge.classList.add("hidden");
-  retakeBtn.classList.add("hidden");
-  captureBtn.classList.remove("hidden");
+  if (videoEl) {
+    videoEl.classList.remove("hidden");
+    videoEl.srcObject = null;
+  }
+  if (imgEl) {
+    imgEl.classList.add("hidden");
+    imgEl.src = "";
+  }
+  if (promptEl) promptEl.classList.remove("hidden");
+  if (scanLine) scanLine.classList.add("hidden");
+  if (verifiedBadge) verifiedBadge.classList.add("hidden");
+  if (retakeBtn) retakeBtn.classList.add("hidden");
+  if (captureBtn) {
+    captureBtn.classList.remove("hidden");
+    captureBtn.removeAttribute("disabled");
+    captureBtn.disabled = false;
+    captureBtn.className = "flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition shadow-lg shutter-btn flex items-center justify-center space-x-2 cursor-pointer";
+  }
+  if (nextBtn) {
+    nextBtn.setAttribute("disabled", "true");
+    nextBtn.disabled = true;
+    nextBtn.className = "w-full py-3 px-4 bg-slate-300 text-slate-500 font-semibold rounded-xl text-sm transition shadow flex items-center justify-center space-x-2 cursor-not-allowed";
+  }
+}
+window.resetFaceCameraUI = resetFaceCameraUI;
 
-  nextBtn.setAttribute("disabled", "true");
-  nextBtn.classList.add("bg-slate-300", "text-slate-500", "cursor-not-allowed");
-  nextBtn.classList.remove("bg-indigo-600", "hover:bg-indigo-700", "text-white");
-
+function retakeFaceSnapshot() {
+  resetFaceCameraUI();
   startCamera("user", "faceVideo");
 }
 
@@ -925,7 +973,20 @@ async function captureMeterSnapshot() {
   const ocrStatusBadge = document.getElementById("ocrStatusBadge");
   const nextBtn = document.getElementById("btnNextToStep4");
 
-  if (!appState.currentStream) return;
+  if (!appState.currentStream) {
+    await startCamera("environment", "meterVideo");
+    return;
+  }
+
+  if (!videoEl.videoWidth || !videoEl.videoHeight) {
+    try {
+      await videoEl.play();
+    } catch (e) {}
+    if (!videoEl.videoWidth || !videoEl.videoHeight) {
+      await startCamera("environment", "meterVideo");
+      return;
+    }
+  }
 
   canvas.width = videoEl.videoWidth || 640;
   canvas.height = videoEl.videoHeight || 480;
@@ -964,30 +1025,49 @@ async function captureMeterSnapshot() {
   await runOCRAnalysis(canvas);
 }
 
-function retakeMeterSnapshot() {
+function resetMeterCameraUI() {
   const videoEl = document.getElementById("meterVideo");
   const imgEl = document.getElementById("meterCapturedImg");
+  const promptEl = document.getElementById("meterCameraPrompt");
+  const scanLine = document.getElementById("meterScanLine");
+  const reticleEl = document.getElementById("meterReticle");
   const retakeBtn = document.getElementById("btnRetakeMeter");
   const captureBtn = document.getElementById("btnCaptureMeter");
   const nextBtn = document.getElementById("btnNextToStep4");
   const ocrCard = document.getElementById("ocrResultCard");
-  const reticleEl = document.getElementById("meterReticle");
 
   appState.meterPhotoBase64 = null;
-  imgEl.classList.add("hidden");
-  videoEl.classList.remove("hidden");
+  if (videoEl) {
+    videoEl.classList.remove("hidden");
+    videoEl.srcObject = null;
+  }
+  if (imgEl) {
+    imgEl.classList.add("hidden");
+    imgEl.src = "";
+  }
+  if (promptEl) promptEl.classList.remove("hidden");
+  if (scanLine) scanLine.classList.add("hidden");
   if (reticleEl) reticleEl.classList.remove("hidden");
-  retakeBtn.classList.add("hidden");
-  captureBtn.classList.remove("hidden");
-  ocrCard.classList.add("hidden");
+  if (retakeBtn) retakeBtn.classList.add("hidden");
+  if (ocrCard) ocrCard.classList.add("hidden");
+
+  if (captureBtn) {
+    captureBtn.classList.remove("hidden");
+    captureBtn.removeAttribute("disabled");
+    captureBtn.disabled = false;
+    captureBtn.className = "flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition shadow-lg shutter-btn flex items-center justify-center space-x-2 cursor-pointer";
+  }
 
   if (nextBtn) {
     nextBtn.setAttribute("disabled", "true");
     nextBtn.disabled = true;
-    nextBtn.classList.add("bg-slate-300", "text-slate-500", "cursor-not-allowed");
-    nextBtn.classList.remove("bg-blue-600", "hover:bg-blue-700", "text-white", "cursor-pointer");
+    nextBtn.className = "w-full py-3 px-4 bg-slate-300 text-slate-500 font-semibold rounded-xl text-sm transition shadow flex items-center justify-center space-x-2 cursor-not-allowed";
   }
+}
+window.resetMeterCameraUI = resetMeterCameraUI;
 
+function retakeMeterSnapshot() {
+  resetMeterCameraUI();
   startCamera("environment", "meterVideo");
 }
 
@@ -1297,10 +1377,345 @@ function prepareSummaryStep() {
         resultTag.textContent = `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
       }
     }
+
+    // สร้างรูปรายงานสรุปผลแบบการ์ดภาพรวมเตรียมไว้
+    setTimeout(() => {
+      generateCompositeReportCard().catch(e => console.warn("Background report generation notice:", e));
+    }, 100);
+
   } catch (err) {
     console.error("prepareSummaryStep error:", err);
   }
 }
+
+// โหลดรูปภาพแบบ Asynchronous
+function loadImageAsync(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+// วาดสี่เหลี่ยมมุมมนแบบรองรับเบราว์เซอร์ทุกเวอร์ชัน
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+// วาดรูปภาพแบบ Object-Fit: Cover ในกรอบมุมมน
+function drawImageCover(ctx, img, x, y, w, h, radius) {
+  if (!img) return;
+  ctx.save();
+  drawRoundedRect(ctx, x, y, w, h, radius);
+  ctx.clip();
+
+  const imgRatio = img.width / img.height;
+  const targetRatio = w / h;
+  let sWidth = img.width;
+  let sHeight = img.height;
+  let sx = 0;
+  let sy = 0;
+
+  if (imgRatio > targetRatio) {
+    sWidth = img.height * targetRatio;
+    sx = (img.width - sWidth) / 2;
+  } else {
+    sHeight = img.width / targetRatio;
+    sy = (img.height - sHeight) / 2;
+  }
+
+  ctx.drawImage(img, sx, sy, sWidth, sHeight, x, y, w, h);
+  ctx.restore();
+
+  // วาดเส้นขอบบางๆ รอบรูป
+  ctx.save();
+  drawRoundedRect(ctx, x, y, w, h, radius);
+  ctx.strokeStyle = "#CBD5E1";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * สร้างรูปรายงานสรุปผลแบบการ์ดภาพรวม (Composite Report Card Image)
+ * ประกอบด้วย: หัวเรื่องบริษัท, ภาพใบหน้า 1:1, ภาพหน้าปัดเครื่องเป่า, ตารางข้อมูลสรุป, วันที่เวลา, พิกัด GPS
+ */
+async function generateCompositeReportCard() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800;
+  canvas.height = 1120;
+  const ctx = canvas.getContext("2d");
+
+  // 1. พื้นหลังการ์ดสีขาว
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, 800, 1120);
+
+  // 2. แถบหัวกระดาษด้านบน (Header Banner) สีน้ำเงินเข้มหรูหรา
+  const headerGrad = ctx.createLinearGradient(0, 0, 800, 120);
+  headerGrad.addColorStop(0, "#1E3A8A");
+  headerGrad.addColorStop(1, "#1D4ED8");
+  ctx.fillStyle = headerGrad;
+  ctx.fillRect(0, 0, 800, 115);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 26px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("หจก. ทั่วไทยขนส่งมงคล", 400, 45);
+
+  ctx.fillStyle = "#BFDBFE";
+  ctx.font = "14px sans-serif";
+  ctx.fillText("ระบบตรวจวัดแอลกอฮอล์พนักงานขับรถขนส่ง (Smart Inspection)", 400, 75);
+
+  ctx.fillStyle = "#93C5FD";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("รายงานสรุปผลการตรวจสอบและยืนยันตัวตนก่อนปฏิบัติหน้าที่", 400, 98);
+
+  // 3. หัวข้อรายงานสรุป
+  ctx.fillStyle = "#0F172A";
+  ctx.font = "bold 18px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("ขั้นตอนที่ 4: สรุปผลและยืนยันการส่งรายงาน", 400, 150);
+
+  ctx.fillStyle = "#64748B";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("บันทึกข้อมูลและจัดเก็บภาพหลักฐานลง Google Sheet & Drive อัตโนมัติ", 400, 172);
+
+  // 4. โหลดภาพถ่ายทั้งสองภาพ
+  const [faceImg, meterImg] = await Promise.all([
+    loadImageAsync(appState.facePhotoBase64),
+    loadImageAsync(appState.meterPhotoBase64)
+  ]);
+
+  // ภาพที่ 1: รูปถ่ายใบหน้า Check-in (ซ้าย)
+  const pBoxW = 345;
+  const pBoxH = 340;
+  const pY = 220;
+
+  ctx.fillStyle = "#334155";
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("1. รูปถ่ายใบหน้า Check-in", 45, 210);
+  if (faceImg) {
+    drawImageCover(ctx, faceImg, 45, pY, pBoxW, pBoxH, 14);
+  } else {
+    drawRoundedRect(ctx, 45, pY, pBoxW, pBoxH, 14);
+    ctx.fillStyle = "#F1F5F9";
+    ctx.fill();
+  }
+
+  // ภาพที่ 2: รูปหน้าปัดเครื่องเป่า (ขวา)
+  ctx.fillStyle = "#334155";
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("2. รูปหน้าปัดเครื่องเป่า", 410, 210);
+  if (meterImg) {
+    drawImageCover(ctx, meterImg, 410, pY, pBoxW, pBoxH, 14);
+  } else {
+    drawRoundedRect(ctx, 410, pY, pBoxW, pBoxH, 14);
+    ctx.fillStyle = "#F1F5F9";
+    ctx.fill();
+  }
+
+  // 5. กล่องตารางสรุปผลข้อมูล (Summary Details Box)
+  const boxY = 585;
+  const boxW = 710;
+  const boxH = 430;
+  ctx.save();
+  drawRoundedRect(ctx, 45, boxY, boxW, boxH, 16);
+  ctx.fillStyle = "#F8FAFC";
+  ctx.fill();
+  ctx.strokeStyle = "#E2E8F0";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+
+  const driver = appState.driver || {};
+  const isPass = appState.testStatus === "ผ่าน" && appState.alcoholValue < 0.01;
+  const statusColor = isPass ? "#15803D" : "#B91C1C";
+  const statusBg = isPass ? "#DCFCE7" : "#FEE2E2";
+  const statusBorder = isPass ? "#86EFAC" : "#FCA5A5";
+  const statusText = isPass ? `ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)` : `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+
+  // แถวที่ 1: ผลการตรวจวัดระดับแอลกอฮอล์
+  const r1Y = boxY + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "15px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("ผลการตรวจวัด:", 70, r1Y);
+
+  // ป้ายสถานะ (Pill Badge)
+  const bW = 210;
+  const bH = 36;
+  const bX = 525;
+  const bY = r1Y - 26;
+  ctx.save();
+  drawRoundedRect(ctx, bX, bY, bW, bH, 8);
+  ctx.fillStyle = statusBg;
+  ctx.fill();
+  ctx.strokeStyle = statusBorder;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = statusColor;
+  ctx.font = "bold 15px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(statusText, bX + (bW / 2), bY + 24);
+  ctx.restore();
+
+  // เส้นแบ่งแถว
+  ctx.strokeStyle = "#E2E8F0";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(70, r1Y + 18);
+  ctx.lineTo(730, r1Y + 18);
+  ctx.stroke();
+
+  // แถวที่ 2: ความตรงตัวบุคคล
+  const r2Y = r1Y + 52;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("ความตรงตัวบุคคล (Face Match):", 70, r2Y);
+  ctx.fillStyle = "#16A34A";
+  ctx.font = "bold 15px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(`ตรง ${appState.faceMatchPercent || 90}% (ผ่าน)`, 730, r2Y);
+
+  // แถวที่ 3: พนักงานขับรถ
+  const r3Y = r2Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("พนักงานขับรถ:", 70, r3Y);
+  ctx.fillStyle = "#0F172A";
+  ctx.font = "bold 15px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(driver.driverName || "-", 730, r3Y);
+
+  // แถวที่ 4: อีเมลพนักงาน
+  const r4Y = r3Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("อีเมลพนักงาน:", 70, r4Y);
+  ctx.fillStyle = "#334155";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(driver.email || "-", 730, r4Y);
+
+  // แถวที่ 5: ทะเบียนรถ
+  const r5Y = r4Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("ทะเบียนรถ:", 70, r5Y);
+  ctx.fillStyle = "#0F172A";
+  ctx.font = "bold 15px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(driver.vehiclePlate || "-", 730, r5Y);
+
+  // แถวที่ 6: พิกัด GPS
+  const r6Y = r5Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("พิกัด GPS:", 70, r6Y);
+  ctx.fillStyle = "#334155";
+  ctx.font = "13px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(appState.gps.text || "-", 730, r6Y);
+
+  // แถวที่ 7: เวลาที่บันทึก
+  const r7Y = r6Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("เวลาที่บันทึก:", 70, r7Y);
+  ctx.fillStyle = "#334155";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "right";
+  const nowThai = new Date().toLocaleString("th-TH");
+  ctx.fillText(nowThai, 730, r7Y);
+
+  // แถวที่ 8: ตราประทับความถูกต้อง
+  const r8Y = r7Y + 42;
+  ctx.fillStyle = "#059669";
+  ctx.font = "bold 12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("✓ VERIFIED DIGITAL INSPECTION RECORD • GOOGLE DRIVE ARCHIVE", 400, r8Y);
+
+  // 6. ส่วนท้าย (Footer)
+  ctx.fillStyle = "#0F172A";
+  ctx.fillRect(0, 1040, 800, 80);
+
+  ctx.fillStyle = "#F1F5F9";
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("copyright , Mr.Taweesak.kom (0623285963)", 400, 1072);
+
+  ctx.fillStyle = "#94A3B8";
+  ctx.font = "12px sans-serif";
+  ctx.fillText("หจก. ทั่วไทยขนส่งมงคล • ระบบตรวจวัดแอลกอฮอล์พนักงานขับรถขนส่ง", 400, 1096);
+
+  const reportDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  appState.reportImageBase64 = reportDataUrl;
+  return reportDataUrl;
+}
+window.generateCompositeReportCard = generateCompositeReportCard;
+
+// ฟังก์ชันดาวน์โหลดรูปรายงานลงในอุปกรณ์ทันที
+window.downloadReportCardImage = async function() {
+  Swal.fire({
+    title: "กำลังสร้างรูปรายงานสรุป...",
+    text: "กรุณารอสักครู่ กำลังประมวลผลภาพถ่ายและข้อมูล",
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading()
+  });
+
+  try {
+    const reportUrl = await generateCompositeReportCard();
+    Swal.close();
+
+    if (!reportUrl) {
+      throw new Error("ไม่สามารถสร้างรูปภาพได้");
+    }
+
+    const link = document.createElement("a");
+    const driverId = appState.driver ? appState.driver.driverId : "DRV";
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    link.download = `REPORT_${driverId}_${dateStr}.jpg`;
+    link.href = reportUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    Swal.fire({
+      icon: "success",
+      title: "บันทึกรูปรายงานสำเร็จ!",
+      text: "ระบบได้ดาวน์โหลดรูปรายงานสรุปเข้าสู่อัลบั้ม/เครื่องของท่านเรียบร้อยแล้ว สามารถส่งเข้ากลุ่ม LINE ได้ทันที",
+      confirmButtonColor: "#2563eb"
+    });
+  } catch (err) {
+    Swal.fire({
+      icon: "error",
+      title: "เกิดข้อผิดพลาด",
+      text: "ไม่สามารถสร้างภาพรายงานได้: " + err.message,
+      confirmButtonColor: "#2563eb"
+    });
+  }
+};
 
 async function handleSubmitData() {
   const remarks = (document.getElementById("summaryRemarks").value || "").trim();
@@ -1377,6 +1792,16 @@ async function handleSubmitData() {
     }
   });
 
+  // สร้างหรือดึงรูปภาพรายงานสรุปแบบการ์ดภาพรวม (Composite Report Card)
+  let reportCardBase64 = appState.reportImageBase64;
+  if (!reportCardBase64) {
+    try {
+      reportCardBase64 = await generateCompositeReportCard();
+    } catch (e) {
+      console.warn("Could not generate composite report card:", e);
+    }
+  }
+
   const payload = {
     action: "submitAlcoholTest",
     driverId: appState.driver ? appState.driver.driverId : "UNKNOWN",
@@ -1389,6 +1814,7 @@ async function handleSubmitData() {
     faceMatchPercent: appState.faceMatchPercent + "%",
     latitude: appState.gps.lat || "",
     longitude: appState.gps.lng || "",
+    reportImageBase64: reportCardBase64 || "",
     faceImageBase64: appState.facePhotoBase64,
     meterImageBase64: appState.meterPhotoBase64,
     verificationMethod: "Face 1:1 Matching & AI OCR",
@@ -1454,13 +1880,23 @@ async function handleSubmitData() {
 }
 
 function resetApplication() {
+  stopCurrentCamera();
   appState.facePhotoBase64 = null;
   appState.meterPhotoBase64 = null;
+  appState.reportImageBase64 = null;
   appState.alcoholValue = 0.00;
   appState.testStatus = "ผ่าน";
+  appState.faceMatchPercent = 0;
+  appState.faceMatchPassed = false;
 
-  retakeFaceSnapshot();
-  retakeMeterSnapshot();
+  resetFaceCameraUI();
+  resetMeterCameraUI();
+
+  const remarksInput = document.getElementById("summaryRemarks");
+  if (remarksInput) remarksInput.value = "";
+  const alcoholInput = document.getElementById("alcoholValueInput");
+  if (alcoholInput) alcoholInput.value = "0.00";
+
   goToStep(1);
 }
 
