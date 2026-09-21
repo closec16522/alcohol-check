@@ -8,7 +8,7 @@
 // --- การตั้งค่าระบบ (Configuration) ---
 const CONFIG = {
   // ใส่ Google Apps Script Web App Deployment URL ที่นี่
-  GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbz_REPLACE_WITH_YOUR_DEPLOYMENT_ID/exec",
+  GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbygXhKLj8jXNkY70z8w5_UYVbrAET_SfJ6l33HX16Tu1pkK9UsVWgc60rRnv1WcaeKeFg/exec",
   SPREADSHEET_ID: "1JM-i8_nrGR7-VDEY82QZ5l5JMJTIBOIsuqOSQSrcD3Y",
   DRIVE_FOLDER_ID: "1tfKH6EOBFdG0c4Wm2MPO-R61NP5mAc0c",
   LEGAL_LIMIT_MG_PERCENT: 0.00,
