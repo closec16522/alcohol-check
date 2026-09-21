@@ -10,6 +10,20 @@ const REG_CONFIG = {
   FACE_API_MODELS_URL: "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/"
 };
 
+function getGasWebAppUrl() {
+  const localUrl = localStorage.getItem("TTMK_GAS_URL");
+  if (localUrl && localUrl.trim().startsWith("https://script.google.com/macros/s/")) {
+    return localUrl.trim();
+  }
+  return REG_CONFIG.GAS_WEBAPP_URL;
+}
+
+function saveGasWebAppUrl(url) {
+  const cleanUrl = (url || "").trim();
+  localStorage.setItem("TTMK_GAS_URL", cleanUrl);
+  REG_CONFIG.GAS_WEBAPP_URL = cleanUrl;
+}
+
 const regState = {
   masterFaceBase64: null,
   faceDescriptor: null,
@@ -315,24 +329,53 @@ async function submitRegistration() {
     let message = "ลงทะเบียนพนักงานและบันทึกใบหน้าต้นแบบเรียบร้อย";
     let masterUrl = "";
 
-    if (REG_CONFIG.GAS_WEBAPP_URL && !REG_CONFIG.GAS_WEBAPP_URL.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID")) {
-      const res = await fetch(REG_CONFIG.GAS_WEBAPP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(payload)
+    let targetGasUrl = getGasWebAppUrl();
+    const isDummy = !targetGasUrl || targetGasUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID");
+
+    if (isDummy) {
+      const { value: enteredUrl } = await Swal.fire({
+        icon: "warning",
+        title: "ยังไม่ได้เชื่อมต่อ Google Apps Script!",
+        html: `
+          <div class="text-xs text-slate-600 text-left space-y-2 mb-3">
+            <p class="font-bold text-red-600 text-sm">ข้อมูลยังไม่สามารถบันทึกลงชีต Registered_Drivers หรือ Drive ได้</p>
+            <p>กรุณาวาง <b>Web App URL</b> จาก Google Apps Script (ลงท้ายด้วย <code>/exec</code>) เพื่อบันทึกข้อมูลพนักงานและรูปหน้าต้นแบบ:</p>
+          </div>
+        `,
+        input: "text",
+        inputPlaceholder: "https://script.google.com/macros/s/AKfycb.../exec",
+        showCancelButton: true,
+        confirmButtonText: "บันทึกและส่งข้อมูล",
+        cancelButtonText: "ยกเลิก",
+        confirmButtonColor: "#2563eb",
+        cancelButtonColor: "#64748b",
+        inputValidator: (val) => {
+          if (!val || !val.includes("script.google.com") || !val.includes("/exec")) {
+            return "กรุณาระบุ Web App URL ที่ถูกต้อง (ขึ้นต้นด้วย https://script.google.com และลงท้ายด้วย /exec)";
+          }
+        }
       });
-      const data = await res.json();
-      if (data.success) {
-        success = true;
-        message = data.message || message;
-        masterUrl = data.masterFaceUrl || "";
+
+      if (enteredUrl) {
+        saveGasWebAppUrl(enteredUrl.trim());
+        targetGasUrl = enteredUrl.trim();
       } else {
-        throw new Error(data.error || "บันทึกไม่สำเร็จ");
+        return;
       }
-    } else {
-      await new Promise(r => setTimeout(r, 1200));
+    }
+
+    const res = await fetch(targetGasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
       success = true;
-      message = "บันทึกข้อมูลลงทะเบียนสำเร็จ (บันทึกในอุปกรณ์นี้แล้ว)";
+      message = data.message || message;
+      masterUrl = data.masterFaceUrl || "";
+    } else {
+      throw new Error(data.error || "บันทึกไม่สำเร็จ");
     }
 
     if (success) {

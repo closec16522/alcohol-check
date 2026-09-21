@@ -83,12 +83,30 @@ window.quickSelectLastDriver = function() {
 window.quickSelectDriver = window.quickSelectLastDriver;
 
 
-// ฟังก์ชันล็อกรหัสผ่านก่อนเข้าหน้าลงทะเบียน (Passcode: 44Cone38)
+// ฟังก์ชันดึง Google Apps Script Web App URL ที่พร้อมใช้งาน (จาก LocalStorage หรือ CONFIG)
+function getGasWebAppUrl() {
+  const localUrl = localStorage.getItem("TTMK_GAS_URL");
+  if (localUrl && localUrl.trim().startsWith("https://script.google.com/macros/s/")) {
+    return localUrl.trim();
+  }
+  return CONFIG.GAS_WEBAPP_URL;
+}
+window.getGasWebAppUrl = getGasWebAppUrl;
+
+function saveGasWebAppUrl(url) {
+  const cleanUrl = (url || "").trim();
+  localStorage.setItem("TTMK_GAS_URL", cleanUrl);
+  CONFIG.GAS_WEBAPP_URL = cleanUrl;
+  console.log("GAS WebApp URL updated:", cleanUrl);
+}
+window.saveGasWebAppUrl = saveGasWebAppUrl;
+
+// ฟังก์ชันล็อกรหัสผ่านก่อนเข้าหน้าลงทะเบียน/ตั้งค่าระบบ (Passcode: 44Cone38)
 window.promptAdminRegisterPasscode = async function() {
   const { value: passcode } = await Swal.fire({
-    title: "ระบบความปลอดภัย",
+    title: "ระบบความปลอดภัยเจ้าหน้าที่",
     html: `
-      <div class="text-xs text-slate-500 mb-2">หน้านี้สำหรับเจ้าหน้าที่/แอดมินเท่านั้น โปรดระบุรหัสผ่านเพื่อดำเนินการลงทะเบียน</div>
+      <div class="text-xs text-slate-500 mb-2">หน้านี้สำหรับเจ้าหน้าที่/แอดมินเท่านั้น โปรดระบุรหัสผ่านเพื่อดำเนินการ</div>
     `,
     input: "password",
     inputPlaceholder: "กรุณาใส่รหัสผ่าน",
@@ -105,15 +123,26 @@ window.promptAdminRegisterPasscode = async function() {
 
   if (passcode === "44Cone38") {
     sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
-    Swal.fire({
-      icon: "success",
-      title: "รหัสผ่านถูกต้อง",
-      text: "กำลังเข้าสู่หน้าลงทะเบียนพนักงาน...",
-      timer: 1200,
-      showConfirmButton: false
-    }).then(() => {
-      window.location.href = "register.html";
+    const result = await Swal.fire({
+      title: "เมนูผู้ดูแลระบบ (Admin)",
+      html: `
+        <div class="text-xs text-slate-600 mb-2">เข้าสู่ระบบสำเร็จ โปรดเลือกการทำงานที่ต้องการ:</div>
+      `,
+      showCancelButton: true,
+      showDenyButton: true,
+      confirmButtonText: "1. ลงทะเบียนพนักงานใหม่",
+      denyButtonText: "2. ⚙️ ตั้งค่า Google Apps Script URL",
+      cancelButtonText: "ปิดหน้าต่าง",
+      confirmButtonColor: "#16a34a",
+      denyButtonColor: "#2563eb",
+      cancelButtonColor: "#64748b"
     });
+
+    if (result.isConfirmed) {
+      window.location.href = "register.html";
+    } else if (result.isDenied) {
+      openGasSettingsModal();
+    }
   } else if (passcode) {
     Swal.fire({
       icon: "error",
@@ -123,6 +152,47 @@ window.promptAdminRegisterPasscode = async function() {
     });
   }
 };
+
+// หน้าต่างตั้งค่า Google Apps Script Web App URL
+async function openGasSettingsModal() {
+  const currentUrl = getGasWebAppUrl();
+  const isDefault = !currentUrl || currentUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID");
+
+  const { value: newUrl } = await Swal.fire({
+    title: "ตั้งค่า Google Apps Script URL",
+    html: `
+      <div class="text-xs text-slate-600 text-left space-y-2 mb-3">
+        <p><b>สถานะปัจจุบัน:</b> ${isDefault ? '<span class="text-red-500 font-bold">ยังไม่ได้เชื่อมต่อ (Demo/Placeholder)</span>' : '<span class="text-emerald-600 font-bold">เชื่อมต่อแล้ว</span>'}</p>
+        <p class="text-slate-500 text-[11px]">วาง Web App URL ที่ได้จากการ Deploy ใน Google Apps Script (ลงท้ายด้วย <code>/exec</code>) เพื่อบันทึกผลตรวจและส่งรูปขึ้น Google Drive / Sheet จริง</p>
+      </div>
+    `,
+    input: "text",
+    inputValue: isDefault ? "" : currentUrl,
+    inputPlaceholder: "https://script.google.com/macros/s/AKfycb.../exec",
+    showCancelButton: true,
+    confirmButtonText: "บันทึก URL",
+    cancelButtonText: "ยกเลิก",
+    confirmButtonColor: "#16a34a",
+    cancelButtonColor: "#64748b",
+    inputValidator: (val) => {
+      if (val && (!val.includes("script.google.com") || !val.includes("/exec"))) {
+        return "URL ต้องขึ้นต้นด้วย https://script.google.com และลงท้ายด้วย /exec";
+      }
+    }
+  });
+
+  if (newUrl) {
+    saveGasWebAppUrl(newUrl);
+    Swal.fire({
+      icon: "success",
+      title: "บันทึก URL สำเร็จ!",
+      text: "ระบบจะใช้ URL นี้ในการส่งข้อมูลและรูปภาพเข้า Google Drive และ Sheet ทันที",
+      timer: 1500,
+      showConfirmButton: false
+    });
+  }
+}
+window.openGasSettingsModal = openGasSettingsModal;
 
 // ฟังก์ชันปุ่มลัดระบุค่าแอลกอฮอล์
 window.setAlcoholValuePreset = function(val) {
@@ -460,9 +530,10 @@ async function handleEmailLookup(providedEmail, providedName) {
   let driverFound = null;
 
   // 1. ค้นหาจาก Google Apps Script Backend ก่อน
-  if (CONFIG.GAS_WEBAPP_URL && !CONFIG.GAS_WEBAPP_URL.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID")) {
+  const currentGasUrl = getGasWebAppUrl();
+  if (currentGasUrl && !currentGasUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID")) {
     try {
-      const response = await fetch(`${CONFIG.GAS_WEBAPP_URL}?action=checkEmail&email=${encodeURIComponent(email)}`);
+      const response = await fetch(`${currentGasUrl}?action=checkEmail&email=${encodeURIComponent(email)}`);
       const data = await response.json();
       if (data.success && data.driver) {
         driverFound = data.driver;
@@ -985,47 +1056,87 @@ async function runOCRAnalysis(fullCanvas) {
 
       console.log("Raw OCR Text from LCD:", cleanStr);
 
-      if (lower.includes("fail")) {
+      // 1. ตรวจจับคำว่า fail ชัดเจนจากหน้าจอ (Fail / FALL)
+      if (lower.includes("fail") || lower.includes("fall")) {
         isRedFail = true;
       }
 
-      // แปลงตัวอักษรที่ OCR มักสับสนกับตัวเลขดิจิทัล (7-segment corrections)
-      let normalized = cleanStr
+      // 2. กำจัดคำศัพท์และปุ่มบนเครื่องเป่าออกก่อน เพื่อไม่ให้ตัวอักษรกลายเป็นตัวเลขขยะ
+      // เช่น 'Esc' มีตัว 's' ที่มักถูกแปลงเป็นเลข '5' หรือ 'Fail' ที่ 'l' มักถูกแปลงเป็นเลข '1' รวมกันเป็น '51'
+      let sanitized = cleanStr
+        .replace(/\b(fail|fall|pass|esc|menu|set|test|ready|blow|wait|ok|err)\b/gi, ' ')
+        .replace(/(mg\s*\/?\s*100\s*ml|mg\s*\/?\s*l|%?\s*bac|g\s*\/?\s*l)/gi, ' ');
+
+      // 3. แปลงตัวอักษร 7-segment เฉพาะที่มักสับสนกับตัวเลข
+      let normalized = sanitized
         .replace(/[OoDd]/g, '0')
-        .replace(/[lI|]/g, '1')
+        .replace(/[lI|!]/g, '1')
         .replace(/[Ss]/g, '5')
         .replace(/[Bb]/g, '8')
         .replace(/[Zz]/g, '2');
 
-      const matches = normalized.match(/\d+(\.\d+)?/g);
-      if (matches && matches.length > 0) {
-        // หาตัวเลขที่ตรงความยาวหน้าปัด
+      const matches = normalized.match(/\d+(\.\d+)?/g) || [];
+      console.log("OCR Candidate Digits:", matches);
+
+      // 4. จัดลำดับความสำคัญของตัวเลข (Priority Matching)
+      let candidateFound = null;
+
+      // Priority 1: ตัวเลข 3 หลัก เช่น 070, 050, 020, 000
+      for (const m of matches) {
+        if (/^0\d{2}$/.test(m)) {
+          candidateFound = m;
+          break;
+        }
+      }
+
+      // Priority 2: ตัวเลขที่มีทศนิยมชัดเจน เช่น 0.00, 0.70, 0.07, 0.50
+      if (!candidateFound) {
         for (const m of matches) {
-          const num = parseFloat(m);
-          if (!isNaN(num)) {
-            if (m === "070" || m === "70") {
-              detectedValue = 0.70;
-              isRedFail = true;
-              break;
-            } else if (m === "050" || m === "50") {
-              detectedValue = 0.50;
-              isRedFail = true;
-              break;
-            } else if (m === "020" || m === "20") {
-              detectedValue = 0.20;
-              isRedFail = true;
-              break;
-            } else if (num >= 10) {
-              detectedValue = num / 100;
-              if (detectedValue >= 0.01) isRedFail = true;
-              break;
-            } else if (num > 0) {
-              detectedValue = num;
-              if (detectedValue >= 0.01) isRedFail = true;
-              break;
-            } else {
-              detectedValue = 0.00;
-            }
+          if (/^\d+\.\d+$/.test(m)) {
+            candidateFound = m;
+            break;
+          }
+        }
+      }
+
+      // Priority 3: ตัวเลข 2 หลัก เช่น 70, 50, 20
+      if (!candidateFound) {
+        for (const m of matches) {
+          if (/^\d{2}$/.test(m) && parseInt(m) >= 10) {
+            candidateFound = m;
+            break;
+          }
+        }
+      }
+
+      // Priority 4: ตัวเลขใดๆ ที่ยาวที่สุด
+      if (!candidateFound && matches.length > 0) {
+        candidateFound = matches.reduce((a, b) => a.length >= b.length ? a : b);
+      }
+
+      if (candidateFound) {
+        const num = parseFloat(candidateFound);
+        if (!isNaN(num)) {
+          if (candidateFound === "070" || candidateFound === "70") {
+            detectedValue = 0.70;
+            isRedFail = true;
+          } else if (candidateFound === "050" || candidateFound === "50") {
+            detectedValue = 0.50;
+            isRedFail = true;
+          } else if (candidateFound === "020" || candidateFound === "20") {
+            detectedValue = 0.20;
+            isRedFail = true;
+          } else if (candidateFound === "000" || candidateFound === "00") {
+            detectedValue = 0.00;
+          } else if (/^0\d{2}$/.test(candidateFound)) {
+            detectedValue = num / 100;
+            if (detectedValue >= 0.01) isRedFail = true;
+          } else if (num >= 10) {
+            detectedValue = num / 100;
+            if (detectedValue >= 0.01) isRedFail = true;
+          } else {
+            detectedValue = num;
+            if (detectedValue >= 0.01) isRedFail = true;
           }
         }
       }
@@ -1213,6 +1324,45 @@ async function handleSubmitData() {
 
   if (!confirmResult.isConfirmed) return;
 
+  let targetGasUrl = getGasWebAppUrl();
+  const isDummyUrl = !targetGasUrl || targetGasUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID");
+
+  if (isDummyUrl) {
+    const { value: enteredUrl } = await Swal.fire({
+      icon: "warning",
+      title: "ยังไม่ได้เชื่อมต่อ Google Apps Script!",
+      html: `
+        <div class="text-xs text-slate-600 text-left space-y-2 mb-3">
+          <p class="font-bold text-red-600 text-sm">ข้อมูลยังไม่สามารถบันทึกลง Google Sheet และ Google Drive ได้</p>
+          <p>ระบบจำเป็นต้องใช้ <b>Web App URL</b> จาก Google Apps Script (ที่ลงท้ายด้วย <code>/exec</code>) เพื่อบันทึกผลและจัดเก็บรูปภาพ</p>
+          <div class="bg-blue-50 border border-blue-200 p-2.5 rounded-xl text-blue-900 space-y-1">
+            <p class="font-semibold">💡 หากท่าน Deploy ใน Google Apps Script เรียบร้อยแล้ว:</p>
+            <p>โปรดวาง Web App URL ในช่องด้านล่าง แล้วกด "เชื่อมต่อและส่งข้อมูล" ทันทีครับ:</p>
+          </div>
+        </div>
+      `,
+      input: "text",
+      inputPlaceholder: "https://script.google.com/macros/s/AKfycb.../exec",
+      showCancelButton: true,
+      confirmButtonText: "เชื่อมต่อและส่งข้อมูล",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: "#2563eb",
+      cancelButtonColor: "#64748b",
+      inputValidator: (val) => {
+        if (!val || !val.includes("script.google.com") || !val.includes("/exec")) {
+          return "กรุณาระบุ Web App URL ที่ถูกต้อง (ขึ้นต้นด้วย https://script.google.com และลงท้ายด้วย /exec)";
+        }
+      }
+    });
+
+    if (enteredUrl) {
+      saveGasWebAppUrl(enteredUrl.trim());
+      targetGasUrl = enteredUrl.trim();
+    } else {
+      return; // ไม่อนุญาตให้จำลองว่าสำเร็จเพื่อป้องกันความสับสน
+    }
+  }
+
   Swal.fire({
     title: "กำลังบันทึกข้อมูล...",
     html: `
@@ -1249,23 +1399,17 @@ async function handleSubmitData() {
     let responseSuccess = false;
     let responseMsg = "บันทึกผลการตรวจเรียบร้อยแล้ว";
 
-    if (CONFIG.GAS_WEBAPP_URL && !CONFIG.GAS_WEBAPP_URL.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID")) {
-      const res = await fetch(CONFIG.GAS_WEBAPP_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(payload)
-      });
-      const resJson = await res.json();
-      if (resJson.success) {
-        responseSuccess = true;
-        responseMsg = resJson.message || responseMsg;
-      } else {
-        throw new Error(resJson.error || "บันทึกไม่สำเร็จ");
-      }
-    } else {
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    const res = await fetch(targetGasUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(payload)
+    });
+    const resJson = await res.json();
+    if (resJson.success) {
       responseSuccess = true;
-      responseMsg = "บันทึกข้อมูลเสร็จสิ้น (โหมดทดสอบ: เชื่อมต่อข้อมูลเรียบร้อย)";
+      responseMsg = resJson.message || "บันทึกผลตรวจและจัดเก็บภาพลง Google Drive สำเร็จ";
+    } else {
+      throw new Error(resJson.error || resJson.message || "การบันทึกข้อมูลไม่สำเร็จ");
     }
 
     if (responseSuccess) {
