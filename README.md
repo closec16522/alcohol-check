@@ -93,12 +93,13 @@
 | H | `Vehicle_Plate` | ทะเบียนรถ |
 | I | `Alcohol_Value` | ค่าระดับแอลกอฮอล์ (mg%) |
 | J | `Status` | ผ่าน / ไม่ผ่าน |
-| K | `Face_Photo_URL` | ลิงก์ดูภาพถ่ายใบหน้าใน Google Drive |
-| L | `Meter_Photo_URL` | ลิงก์ดูภาพถ่ายหน้าปัดเครื่องเป่าใน Google Drive |
-| M | `GPS_Coordinates` | พิกัดละติจูด, ลองจิจูด |
-| N | `Google_Maps_Link` | ลิงก์ดูตำแหน่งบน Google Maps |
-| O | `Verification_Method` | วิธีการตรวจสอบ |
-| P | `Remarks` | หมายเหตุ |
+| K | `Face_Match_Percent` | ระดับความตรงของใบหน้า 1:1 (%) |
+| L | `Face_Photo_URL` | ลิงก์ดูภาพถ่ายใบหน้าใน Google Drive |
+| M | `Meter_Photo_URL` | ลิงก์ดูภาพถ่ายหน้าปัดเครื่องเป่าใน Google Drive |
+| N | `GPS_Coordinates` | พิกัดละติจูด, ลองจิจูด |
+| O | `Google_Maps_Link` | ลิงก์ดูตำแหน่งบน Google Maps |
+| P | `Verification_Method` | วิธีการตรวจสอบ |
+| Q | `Remarks` | หมายเหตุ |
 
 ---
 
