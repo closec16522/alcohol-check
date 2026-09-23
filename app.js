@@ -259,7 +259,6 @@ window.handleNextToStep4 = function() {
     return;
   }
   stopCurrentCamera();
-  prepareSummaryStep();
   goToStep(4);
 };
 
@@ -272,6 +271,14 @@ const appState = {
   faceMatchPercent: 0,
   faceMatchPassed: false,
   meterPhotoBase64: null,
+  // ข้อมูลการตรวจวัดความดันโลหิตและชีพจร
+  bp: {
+    sys: 120,
+    dia: 80,
+    pulse: 75,
+    status: "ความดันปกติ",
+    photoBase64: null
+  },
   reportImageBase64: null,
   alcoholValue: 0.00,
   testStatus: "ผ่าน",
@@ -412,7 +419,6 @@ function initEventListeners() {
   });
   btnNextToStep4.addEventListener("click", () => {
     stopCurrentCamera();
-    prepareSummaryStep();
     goToStep(4);
   });
 
@@ -427,12 +433,40 @@ function initEventListeners() {
     }
   });
 
-  // Step 4: ส่งข้อมูลผลตรวจ
-  const btnBackToStep3 = document.getElementById("btnBackToStep3");
+  // Step 4: กล้องถ่ายหน้าปัดเครื่องวัดความดัน & บันทึกค่า SYS / DIA / PULSE
+  const btnStartBPCamera = document.getElementById("btnStartBPCamera");
+  const btnCaptureBP = document.getElementById("btnCaptureBP");
+  const btnRetakeBP = document.getElementById("btnRetakeBP");
+  const btnBackToStep3From4 = document.getElementById("btnBackToStep3From4");
+  const btnNextToStep5 = document.getElementById("btnNextToStep5");
+  const bpSysInput = document.getElementById("bpSysInput");
+  const bpDiaInput = document.getElementById("bpDiaInput");
+  const bpPulseInput = document.getElementById("bpPulseInput");
+
+  if (btnStartBPCamera) btnStartBPCamera.addEventListener("click", () => startCamera("environment", "bpVideo"));
+  if (btnCaptureBP) btnCaptureBP.addEventListener("click", () => captureBPSnapshot());
+  if (btnRetakeBP) btnRetakeBP.addEventListener("click", () => retakeBPSnapshot());
+  if (btnBackToStep3From4) btnBackToStep3From4.addEventListener("click", () => {
+    stopCurrentCamera();
+    goToStep(3);
+  });
+  if (btnNextToStep5) btnNextToStep5.addEventListener("click", () => {
+    stopCurrentCamera();
+    prepareSummaryStep();
+    goToStep(5);
+  });
+
+  const onBPChange = () => evaluateBloodPressure();
+  if (bpSysInput) bpSysInput.addEventListener("input", onBPChange);
+  if (bpDiaInput) bpDiaInput.addEventListener("input", onBPChange);
+  if (bpPulseInput) bpPulseInput.addEventListener("input", onBPChange);
+
+  // Step 5: ส่งข้อมูลผลตรวจ
+  const btnBackToStep4From5 = document.getElementById("btnBackToStep4From5");
   const btnFinalSubmit = document.getElementById("btnFinalSubmit");
 
-  btnBackToStep3.addEventListener("click", () => goToStep(3));
-  btnFinalSubmit.addEventListener("click", () => handleSubmitData());
+  if (btnBackToStep4From5) btnBackToStep4From5.addEventListener("click", () => goToStep(4));
+  if (btnFinalSubmit) btnFinalSubmit.addEventListener("click", () => handleSubmitData());
 }
 
 /**
@@ -460,13 +494,13 @@ function switchUser() {
 }
 
 /**
- * จัดการเปลี่ยนหน้า Step
+ * จัดการเปลี่ยนหน้า Step (1-5)
  */
 function goToStep(stepNumber) {
   stopCurrentCamera();
   appState.currentStep = stepNumber;
 
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 5; i++) {
     const stepEl = document.getElementById(`step${i}`);
     const indicatorEl = document.getElementById(`stepIndicator${i}`);
     if (stepEl) stepEl.classList.add("hidden");
@@ -503,11 +537,19 @@ function goToStep(stepNumber) {
       startCamera("user", "faceVideo");
     }
   } else if (stepNumber === 3) {
-    // เปิดกล้องหลังสดอัตโนมัติทันที
+    // เปิดกล้องหลังสดอัตโนมัติสำหรับเครื่องเป่า
     if (!appState.meterPhotoBase64) {
       resetMeterCameraUI();
       startCamera("environment", "meterVideo");
     }
+  } else if (stepNumber === 4) {
+    // เปิดกล้องหลังสดอัตโนมัติสำหรับเครื่องวัดความดัน
+    if (!appState.bp.photoBase64) {
+      resetBPCameraUI();
+      startCamera("environment", "bpVideo");
+    }
+  } else if (stepNumber === 5) {
+    prepareSummaryStep();
   }
 
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -679,9 +721,22 @@ async function startCamera(facingMode, videoElementId) {
   stopCurrentCamera();
 
   const videoEl = document.getElementById(videoElementId);
-  const promptEl = document.getElementById(videoElementId === "faceVideo" ? "faceCameraPrompt" : "meterCameraPrompt");
-  const captureBtn = document.getElementById(videoElementId === "faceVideo" ? "btnCaptureFace" : "btnCaptureMeter");
-  const scanLine = document.getElementById(videoElementId === "faceVideo" ? "faceScanLine" : "meterScanLine");
+  let promptId = "faceCameraPrompt";
+  let captureBtnId = "btnCaptureFace";
+  let scanLineId = "faceScanLine";
+  if (videoElementId === "meterVideo") {
+    promptId = "meterCameraPrompt";
+    captureBtnId = "btnCaptureMeter";
+    scanLineId = "meterScanLine";
+  } else if (videoElementId === "bpVideo") {
+    promptId = "bpCameraPrompt";
+    captureBtnId = "btnCaptureBP";
+    scanLineId = "bpScanLine";
+  }
+
+  const promptEl = document.getElementById(promptId);
+  const captureBtn = document.getElementById(captureBtnId);
+  const scanLine = document.getElementById(scanLineId);
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     Swal.fire({
@@ -708,12 +763,14 @@ async function startCamera(facingMode, videoElementId) {
     videoEl.srcObject = stream;
     await videoEl.play();
 
-    promptEl.classList.add("hidden");
+    if (promptEl) promptEl.classList.add("hidden");
     if (scanLine) scanLine.classList.remove("hidden");
 
-    captureBtn.removeAttribute("disabled");
-    captureBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
-    captureBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-lg");
+    if (captureBtn) {
+      captureBtn.removeAttribute("disabled");
+      captureBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+      captureBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-lg");
+    }
 
   } catch (err) {
     console.error("Camera access error:", err);
@@ -765,7 +822,13 @@ async function captureFaceSnapshot() {
   canvas.width = videoEl.videoWidth || 640;
   canvas.height = videoEl.videoHeight || 480;
   const ctx = canvas.getContext("2d");
+
+  // กลับด้านแนวนอน (Mirror) เพื่อให้ภาพที่บันทึกตรงกับที่เห็นในจอกระจก ไม่หลอกตา
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
 
   // ตรวจสอบความสว่างภาพ
   const isImageValid = checkImageBrightnessQuality(ctx, canvas.width, canvas.height);
@@ -1197,7 +1260,10 @@ async function runOCRAnalysis(fullCanvas) {
       if (candidateFound) {
         const num = parseFloat(candidateFound);
         if (!isNaN(num)) {
-          if (candidateFound === "070" || candidateFound === "70") {
+          if (candidateFound === "047" || candidateFound === "47") {
+            detectedValue = 0.47;
+            isRedFail = true;
+          } else if (candidateFound === "070" || candidateFound === "70") {
             detectedValue = 0.70;
             isRedFail = true;
           } else if (candidateFound === "050" || candidateFound === "50") {
@@ -1259,34 +1325,73 @@ async function runOCRAnalysis(fullCanvas) {
 }
 
 /**
- * ปรับปรุงภาพตัวเลขดิจิทัล 7-Segment LCD ให้คมชัดก่อนส่งให้ OCR อ่าน
+ * ปรับปรุงภาพตัวเลขดิจิทัล 7-Segment & Color TFT LCD ให้คมชัดก่อนส่งให้ OCR อ่าน
+ * รองรับจอ Color TFT (ตัวเลขสีแดงบนพื้นหลังสีเหลือง/เขียวมะนาว) และจอ LCD 7-Segment ทุกรุ่น
  */
 function preprocess7SegmentLCD(ctx, width, height, isRedScreen) {
   try {
     const imgData = ctx.getImageData(0, 0, width, height);
     const d = imgData.data;
 
-    for (let i = 0; i < d.length; i += 4) {
+    // 1. ตรวจสอบลักษณะจอภาพจริง: หน้าจอสี TFT (พื้นหลังเหลือง/เขียว ตัวเลขแดง)
+    let redDigitPixelCount = 0;
+    let yellowBgPixelCount = 0;
+
+    for (let i = 0; i < d.length; i += 16) {
       const r = d[i];
       const g = d[i + 1];
       const b = d[i + 2];
-
-      if (isRedScreen) {
-        // สำหรับหน้าจอสีแดง: ตัวเลขสีเหลือง/ส้ม จะมี Green สูงกว่าพื้นหลังสีแดง
-        const isDigit = (g > 80 && r > 110 && (g - b) > 20);
-        const val = isDigit ? 0 : 255; // ตัวเลขเป็นสีดำ (0), พื้นหลังเป็นสีขาว (255)
-        d[i] = val;
-        d[i + 1] = val;
-        d[i + 2] = val;
-      } else {
-        // สำหรับหน้าจอสีเขียว/ฟ้า/เทาทั่วไป
-        const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-        const val = gray < 130 ? 0 : 255;
-        d[i] = val;
-        d[i + 1] = val;
-        d[i + 2] = val;
+      // ตัวเลขสีแดงสดบนจอ TFT
+      if (r > 90 && (r - g) > 20 && (r - b) > 20) {
+        redDigitPixelCount++;
+      } else if (r > 120 && g > 120 && b < 120) {
+        yellowBgPixelCount++;
       }
     }
+
+    const isColorTFT = (redDigitPixelCount > 25 && yellowBgPixelCount > 80);
+    const mask = new Uint8Array(width * height);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const r = d[idx];
+        const g = d[idx + 1];
+        const b = d[idx + 2];
+        let isDigit = false;
+
+        if (isColorTFT) {
+          // สกัดเฉพาะพิกเซลสีแดงของตัวเลข (เช่น 047)
+          // กำจัดคำว่า Pass (เขียวเข้ม), Esc (ฟ้า), mg/100ml และพื้นหลังเหลืองทิ้ง 100%
+          isDigit = (r > 75 && (r - g) > 18 && (r - b) > 18);
+        } else if (isRedScreen) {
+          isDigit = (g > 80 && r > 110 && (g - b) > 20);
+        } else {
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          isDigit = (gray < 130);
+        }
+
+        mask[y * width + x] = isDigit ? 0 : 255;
+      }
+    }
+
+    // 2. Vertical Dilation: เชื่อมรอยต่อเส้นสแกนไลน์จุดพิกเซลของจอ TFT ไม่ให้ตัวเลขขาด
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const mIdx = y * width + x;
+        let finalVal = mask[mIdx];
+        if (finalVal === 255) {
+          if (y > 0 && y < height - 1 && mask[(y - 1) * width + x] === 0 && mask[(y + 1) * width + x] === 0) {
+            finalVal = 0;
+          }
+        }
+        const pIdx = mIdx * 4;
+        d[pIdx] = finalVal;
+        d[pIdx + 1] = finalVal;
+        d[pIdx + 2] = finalVal;
+      }
+    }
+
     ctx.putImageData(imgData, 0, 0);
   } catch (e) {
     console.warn("7-Segment LCD preprocessing notice:", e);
@@ -1335,7 +1440,180 @@ function updateAlcoholEvaluation(val) {
 }
 
 // =========================================================================
-// STEP 4: Summary & Submit to Google Apps Script / Sheet
+// STEP 4: Blood Pressure & Pulse Inspection
+// =========================================================================
+function evaluateBloodPressure() {
+  const sysInput = document.getElementById("bpSysInput");
+  const diaInput = document.getElementById("bpDiaInput");
+  const pulseInput = document.getElementById("bpPulseInput");
+  const badge = document.getElementById("bpStatusBadge");
+  const notice = document.getElementById("bpSafetyNotice");
+
+  const sys = parseInt(sysInput ? sysInput.value : 120) || 120;
+  const dia = parseInt(diaInput ? diaInput.value : 80) || 80;
+  const pulse = parseInt(pulseInput ? pulseInput.value : 75) || 75;
+
+  let status = "ความดันปกติ";
+  let isPass = true;
+  let badgeClass = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-500/20 text-emerald-300";
+  let noticeHtml = "✓ ค่าความดันอยู่ในเกณฑ์ปกติ (SYS < 140, DIA < 90) ร่างกายพร้อมขับขี่ปลอดภัย";
+  let noticeClass = "text-[11px] text-emerald-300/90 bg-emerald-950/40 p-2 rounded-lg border border-emerald-900/50";
+
+  if (sys >= 160 || dia >= 100) {
+    status = "ความดันสูงมาก (อันตราย)";
+    isPass = false;
+    badgeClass = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-red-500/20 text-red-300 pulse-red";
+    noticeHtml = `⚠️ ความดันโลหิตสูงระดับอันตราย (${sys}/${dia} mmHg) ห้ามปฏิบัติหน้าที่ขับขี่เด็ดขาด! ควรนั่งพักผ่อน 15 นาทีแล้ววัดใหม่`;
+    noticeClass = "text-[11px] text-red-300/90 bg-red-950/40 p-2 rounded-lg border border-red-900/50 font-bold";
+  } else if (sys >= 140 || dia >= 90) {
+    status = "ความดันโลหิตสูง";
+    isPass = false;
+    badgeClass = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-300";
+    noticeHtml = `⚠️ ค่าความดันเริ่มสูงเกินมาตรฐาน (${sys}/${dia} mmHg) แนะนำให้พักผ่อนและสังเกตอาการอย่างใกล้ชิด`;
+    noticeClass = "text-[11px] text-amber-300/90 bg-amber-950/40 p-2 rounded-lg border border-amber-900/50 font-medium";
+  } else if (sys < 90 || dia < 60) {
+    status = "ความดันโลหิตต่ำ";
+    isPass = true;
+    badgeClass = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-300";
+    noticeHtml = `ℹ️ ค่าความดันค่อนข้างต่ำ (${sys}/${dia} mmHg) ระมัดระวังอาการหน้ามืดหรือวิงเวียน`;
+    noticeClass = "text-[11px] text-amber-300/90 bg-amber-950/40 p-2 rounded-lg border border-amber-900/50";
+  }
+
+  appState.bp = {
+    sys: sys,
+    dia: dia,
+    pulse: pulse,
+    status: status,
+    isPass: isPass,
+    photoBase64: (appState.bp && appState.bp.photoBase64) ? appState.bp.photoBase64 : null
+  };
+
+  if (badge) {
+    badge.className = badgeClass;
+    badge.textContent = status;
+  }
+  if (notice) {
+    notice.className = noticeClass;
+    notice.innerHTML = noticeHtml;
+  }
+}
+window.evaluateBloodPressure = evaluateBloodPressure;
+
+function setBPPreset(sys, dia, pulse) {
+  const sysInput = document.getElementById("bpSysInput");
+  const diaInput = document.getElementById("bpDiaInput");
+  const pulseInput = document.getElementById("bpPulseInput");
+
+  if (sysInput) sysInput.value = sys;
+  if (diaInput) diaInput.value = dia;
+  if (pulseInput) pulseInput.value = pulse;
+
+  evaluateBloodPressure();
+
+  const Toast = Swal.mixin({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 1600,
+    timerProgressBar: true
+  });
+  Toast.fire({
+    icon: (sys < 140 && dia < 90) ? 'success' : 'warning',
+    title: `บันทึกค่าความดัน: ${sys}/${dia} mmHg (${pulse} bpm)`
+  });
+}
+window.setBPPreset = setBPPreset;
+
+async function captureBPSnapshot() {
+  const videoEl = document.getElementById("bpVideo");
+  const imgEl = document.getElementById("bpCapturedImg");
+  const canvas = document.getElementById("snapshotCanvas");
+  const scanLine = document.getElementById("bpScanLine");
+  const promptEl = document.getElementById("bpCameraPrompt");
+  const captureBtn = document.getElementById("btnCaptureBP");
+  const retakeBtn = document.getElementById("btnRetakeBP");
+  const nextBtn = document.getElementById("btnNextToStep5");
+
+  if (!videoEl || !videoEl.videoWidth) {
+    Swal.fire({
+      icon: "warning",
+      title: "ยังไม่ได้เปิดกล้อง",
+      text: "กรุณากด 'เปิดกล้องถ่ายเครื่องวัดความดัน' ก่อนกดถ่ายภาพ",
+      confirmButtonColor: "#2563eb"
+    });
+    return;
+  }
+
+  canvas.width = videoEl.videoWidth;
+  canvas.height = videoEl.videoHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.90);
+  if (!appState.bp) appState.bp = {};
+  appState.bp.photoBase64 = dataUrl;
+
+  stopCurrentCamera();
+
+  imgEl.src = dataUrl;
+  imgEl.classList.remove("hidden");
+  if (scanLine) scanLine.classList.add("hidden");
+  if (promptEl) promptEl.classList.add("hidden");
+
+  if (captureBtn) captureBtn.classList.add("hidden");
+  if (retakeBtn) retakeBtn.classList.remove("hidden");
+
+  evaluateBloodPressure();
+
+  if (nextBtn) {
+    nextBtn.removeAttribute("disabled");
+    nextBtn.disabled = false;
+    nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+    nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
+  }
+
+  Swal.fire({
+    icon: "success",
+    title: "บันทึกภาพเครื่องวัดความดันแล้ว",
+    text: "ท่านสามารถตรวจสอบค่า SYS/DIA/PULSE หรือใช้ปุ่มลัดด้านล่างเพื่อยืนยันผล",
+    timer: 1500,
+    showConfirmButton: false
+  });
+}
+window.captureBPSnapshot = captureBPSnapshot;
+
+function retakeBPSnapshot() {
+  if (appState.bp) appState.bp.photoBase64 = null;
+  resetBPCameraUI();
+  startCamera("environment", "bpVideo");
+}
+window.retakeBPSnapshot = retakeBPSnapshot;
+
+function resetBPCameraUI() {
+  const videoEl = document.getElementById("bpVideo");
+  const imgEl = document.getElementById("bpCapturedImg");
+  const scanLine = document.getElementById("bpScanLine");
+  const promptEl = document.getElementById("bpCameraPrompt");
+  const captureBtn = document.getElementById("btnCaptureBP");
+  const retakeBtn = document.getElementById("btnRetakeBP");
+
+  if (videoEl) videoEl.classList.remove("hidden");
+  if (imgEl) {
+    imgEl.src = "";
+    imgEl.classList.add("hidden");
+  }
+  if (scanLine) scanLine.classList.add("hidden");
+  if (promptEl) promptEl.classList.remove("hidden");
+  if (captureBtn) {
+    captureBtn.classList.remove("hidden");
+    captureBtn.setAttribute("disabled", "true");
+    captureBtn.className = "flex-1 py-3 px-4 bg-slate-300 text-slate-500 font-bold rounded-xl text-sm transition shadow shutter-btn flex items-center justify-center space-x-2 cursor-not-allowed";
+  }
+  if (retakeBtn) retakeBtn.classList.add("hidden");
+}
+
+// =========================================================================
+// STEP 5: Summary & Submit to Google Apps Script / Sheet
 // =========================================================================
 function prepareSummaryStep() {
   try {
@@ -1344,6 +1622,9 @@ function prepareSummaryStep() {
 
     const meterImg = document.getElementById("summaryMeterImg");
     if (meterImg) meterImg.src = appState.meterPhotoBase64 || "";
+
+    const bpImg = document.getElementById("summaryBPImg");
+    if (bpImg) bpImg.src = (appState.bp && appState.bp.photoBase64) ? appState.bp.photoBase64 : "";
 
     const driver = appState.driver || {};
     const nameEl = document.getElementById("summaryDriverName");
@@ -1369,12 +1650,24 @@ function prepareSummaryStep() {
 
     const resultTag = document.getElementById("summaryResultTag");
     if (resultTag) {
-      if (appState.testStatus === "ผ่าน") {
+      if (appState.testStatus === "ผ่าน" && appState.alcoholValue < 0.01) {
         resultTag.className = "font-bold px-2.5 py-1 rounded-md text-emerald-700 bg-emerald-100 border border-emerald-300";
         resultTag.textContent = `ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
       } else {
         resultTag.className = "font-bold px-2.5 py-1 rounded-md text-red-700 bg-red-100 border border-red-300";
         resultTag.textContent = `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+      }
+    }
+
+    const bpTag = document.getElementById("summaryBPTag");
+    if (bpTag) {
+      const bp = appState.bp || { sys: 120, dia: 80, pulse: 75, status: "ความดันปกติ", isPass: true };
+      if (bp.isPass) {
+        bpTag.className = "font-bold px-2.5 py-1 rounded-md text-emerald-700 bg-emerald-100 border border-emerald-300";
+        bpTag.textContent = `${bp.sys}/${bp.dia} mmHg (${bp.pulse} bpm) • ${bp.status}`;
+      } else {
+        bpTag.className = "font-bold px-2.5 py-1 rounded-md text-red-700 bg-red-100 border border-red-300";
+        bpTag.textContent = `${bp.sys}/${bp.dia} mmHg (${bp.pulse} bpm) • ${bp.status}`;
       }
     }
 
@@ -1451,7 +1744,7 @@ function drawImageCover(ctx, img, x, y, w, h, radius) {
 
 /**
  * สร้างรูปรายงานสรุปผลแบบการ์ดภาพรวม (Composite Report Card Image)
- * ประกอบด้วย: หัวเรื่องบริษัท, ภาพใบหน้า 1:1, ภาพหน้าปัดเครื่องเป่า, ตารางข้อมูลสรุป, วันที่เวลา, พิกัด GPS
+ * ประกอบด้วย: หัวเรื่องบริษัท, ภาพใบหน้า 1:1, ภาพหน้าปัดเครื่องเป่า, ภาพเครื่องวัดความดัน, ตารางข้อมูลสรุป, วันที่เวลา, พิกัด GPS
  */
 async function generateCompositeReportCard() {
   const canvas = document.createElement("canvas");
@@ -1477,64 +1770,74 @@ async function generateCompositeReportCard() {
 
   ctx.fillStyle = "#BFDBFE";
   ctx.font = "14px sans-serif";
-  ctx.fillText("ระบบตรวจวัดแอลกอฮอล์พนักงานขับรถขนส่ง (Smart Inspection)", 400, 75);
+  ctx.fillText("ระบบตรวจวัดแอลกอฮอล์และความพร้อมสุขภาพพนักงานขับรถขนส่ง", 400, 75);
 
   ctx.fillStyle = "#93C5FD";
   ctx.font = "12px sans-serif";
-  ctx.fillText("รายงานสรุปผลการตรวจสอบและยืนยันตัวตนก่อนปฏิบัติหน้าที่", 400, 98);
+  ctx.fillText("รายงานสรุปผลการตรวจสอบ ยืนยันตัวตน และตรวจสุขภาพก่อนปฏิบัติหน้าที่", 400, 98);
 
   // 3. หัวข้อรายงานสรุป
   ctx.fillStyle = "#0F172A";
   ctx.font = "bold 18px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("ขั้นตอนที่ 4: สรุปผลและยืนยันการส่งรายงาน", 400, 150);
+  ctx.fillText("ขั้นตอนที่ 5: สรุปผลและยืนยันการส่งรายงาน", 400, 148);
 
   ctx.fillStyle = "#64748B";
   ctx.font = "12px sans-serif";
-  ctx.fillText("บันทึกข้อมูลและจัดเก็บภาพหลักฐานลง Google Sheet & Drive อัตโนมัติ", 400, 172);
+  ctx.fillText("บันทึกข้อมูลและจัดเก็บภาพหลักฐานลง Google Sheet & Drive อัตโนมัติ", 400, 168);
 
-  // 4. โหลดภาพถ่ายทั้งสองภาพ
-  const [faceImg, meterImg] = await Promise.all([
+  // 4. โหลดภาพถ่ายทั้ง 3 ภาพ
+  const bpPhoto = (appState.bp && appState.bp.photoBase64) ? appState.bp.photoBase64 : null;
+  const [faceImg, meterImg, bpImg] = await Promise.all([
     loadImageAsync(appState.facePhotoBase64),
-    loadImageAsync(appState.meterPhotoBase64)
+    loadImageAsync(appState.meterPhotoBase64),
+    loadImageAsync(bpPhoto)
   ]);
 
-  // ภาพที่ 1: รูปถ่ายใบหน้า Check-in (ซ้าย)
-  const pBoxW = 345;
-  const pBoxH = 340;
-  const pY = 220;
+  // ภาพ 3 ภาพเรียงแนวนอน
+  const pBoxW = 226;
+  const pBoxH = 220;
+  const pY = 215;
 
+  // ภาพที่ 1: รูปถ่ายใบหน้า Check-in (ซ้าย)
   ctx.fillStyle = "#334155";
-  ctx.font = "bold 14px sans-serif";
+  ctx.font = "bold 13px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("1. รูปถ่ายใบหน้า Check-in", 45, 210);
+  ctx.fillText("1. รูปใบหน้า Check-in", 40, 205);
   if (faceImg) {
-    drawImageCover(ctx, faceImg, 45, pY, pBoxW, pBoxH, 14);
+    drawImageCover(ctx, faceImg, 40, pY, pBoxW, pBoxH, 12);
   } else {
-    drawRoundedRect(ctx, 45, pY, pBoxW, pBoxH, 14);
+    drawRoundedRect(ctx, 40, pY, pBoxW, pBoxH, 12);
     ctx.fillStyle = "#F1F5F9";
     ctx.fill();
   }
 
-  // ภาพที่ 2: รูปหน้าปัดเครื่องเป่า (ขวา)
-  ctx.fillStyle = "#334155";
-  ctx.font = "bold 14px sans-serif";
-  ctx.textAlign = "left";
-  ctx.fillText("2. รูปหน้าปัดเครื่องเป่า", 410, 210);
+  // ภาพที่ 2: รูปหน้าปัดเครื่องเป่า (กลาง)
+  ctx.fillText("2. หน้าปัดเครื่องเป่า", 286, 205);
   if (meterImg) {
-    drawImageCover(ctx, meterImg, 410, pY, pBoxW, pBoxH, 14);
+    drawImageCover(ctx, meterImg, 286, pY, pBoxW, pBoxH, 12);
   } else {
-    drawRoundedRect(ctx, 410, pY, pBoxW, pBoxH, 14);
+    drawRoundedRect(ctx, 286, pY, pBoxW, pBoxH, 12);
+    ctx.fillStyle = "#F1F5F9";
+    ctx.fill();
+  }
+
+  // ภาพที่ 3: รูปหน้าปัดเครื่องวัดความดัน (ขวา)
+  ctx.fillText("3. เครื่องวัดความดัน", 532, 205);
+  if (bpImg) {
+    drawImageCover(ctx, bpImg, 532, pY, pBoxW, pBoxH, 12);
+  } else {
+    drawRoundedRect(ctx, 532, pY, pBoxW, pBoxH, 12);
     ctx.fillStyle = "#F1F5F9";
     ctx.fill();
   }
 
   // 5. กล่องตารางสรุปผลข้อมูล (Summary Details Box)
-  const boxY = 585;
-  const boxW = 710;
-  const boxH = 430;
+  const boxY = 460;
+  const boxW = 720;
+  const boxH = 555;
   ctx.save();
-  drawRoundedRect(ctx, 45, boxY, boxW, boxH, 16);
+  drawRoundedRect(ctx, 40, boxY, boxW, boxH, 16);
   ctx.fillStyle = "#F8FAFC";
   ctx.fill();
   ctx.strokeStyle = "#E2E8F0";
@@ -1543,118 +1846,158 @@ async function generateCompositeReportCard() {
   ctx.restore();
 
   const driver = appState.driver || {};
-  const isPass = appState.testStatus === "ผ่าน" && appState.alcoholValue < 0.01;
-  const statusColor = isPass ? "#15803D" : "#B91C1C";
-  const statusBg = isPass ? "#DCFCE7" : "#FEE2E2";
-  const statusBorder = isPass ? "#86EFAC" : "#FCA5A5";
-  const statusText = isPass ? `ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)` : `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+  const isAlcoholPass = appState.testStatus === "ผ่าน" && appState.alcoholValue < 0.01;
+  const bp = appState.bp || { sys: 120, dia: 80, pulse: 75, status: "ความดันปกติ", isPass: true };
+  const isOverallPass = isAlcoholPass && bp.isPass && appState.faceMatchPassed;
 
   // แถวที่ 1: ผลการตรวจวัดระดับแอลกอฮอล์
-  const r1Y = boxY + 45;
+  const r1Y = boxY + 40;
   ctx.fillStyle = "#64748B";
-  ctx.font = "15px sans-serif";
+  ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("ผลการตรวจวัด:", 70, r1Y);
+  ctx.fillText("ผลตรวจแอลกอฮอล์:", 65, r1Y);
 
-  // ป้ายสถานะ (Pill Badge)
-  const bW = 210;
-  const bH = 36;
-  const bX = 525;
-  const bY = r1Y - 26;
+  const alcText = isAlcoholPass ? `ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)` : `ไม่ผ่าน (${appState.alcoholValue.toFixed(2)} mg%)`;
+  const alcBg = isAlcoholPass ? "#DCFCE7" : "#FEE2E2";
+  const alcBorder = isAlcoholPass ? "#86EFAC" : "#FCA5A5";
+  const alcColor = isAlcoholPass ? "#15803D" : "#B91C1C";
   ctx.save();
-  drawRoundedRect(ctx, bX, bY, bW, bH, 8);
-  ctx.fillStyle = statusBg;
+  drawRoundedRect(ctx, 515, r1Y - 24, 215, 32, 6);
+  ctx.fillStyle = alcBg;
   ctx.fill();
-  ctx.strokeStyle = statusBorder;
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = alcBorder;
+  ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = statusColor;
-  ctx.font = "bold 15px sans-serif";
+  ctx.fillStyle = alcColor;
+  ctx.font = "bold 14px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(statusText, bX + (bW / 2), bY + 24);
+  ctx.fillText(alcText, 622, r1Y - 3);
+  ctx.restore();
+
+  // แถวที่ 2: ผลตรวจวัดความดันโลหิตและชีพจร
+  const r2Y = r1Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("ผลตรวจความดันและชีพจร:", 65, r2Y);
+
+  const bpText = `${bp.sys}/${bp.dia} mmHg (${bp.pulse} bpm) • ${bp.status}`;
+  const bpBg = bp.isPass ? "#DCFCE7" : "#FEF3C7";
+  const bpBorder = bp.isPass ? "#86EFAC" : "#FCD34D";
+  const bpColor = bp.isPass ? "#15803D" : "#B45309";
+  ctx.save();
+  drawRoundedRect(ctx, 470, r2Y - 24, 260, 32, 6);
+  ctx.fillStyle = bpBg;
+  ctx.fill();
+  ctx.strokeStyle = bpBorder;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = bpColor;
+  ctx.font = "bold 13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(bpText, 600, r2Y - 3);
+  ctx.restore();
+
+  // แถวที่ 3: สรุปความพร้อมปฏิบัติหน้าที่ (Overall Status)
+  const r3Y = r2Y + 45;
+  ctx.fillStyle = "#64748B";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("ประเมินความพร้อมปฏิบัติหน้าที่:", 65, r3Y);
+
+  const ovText = isOverallPass ? "✓ พร้อมปฏิบัติหน้าที่ขับขี่" : "⚠️ ไม่พร้อม / ไม่อนุญาตให้ขับขี่";
+  const ovBg = isOverallPass ? "#15803D" : "#DC2626";
+  ctx.save();
+  drawRoundedRect(ctx, 470, r3Y - 24, 260, 32, 6);
+  ctx.fillStyle = ovBg;
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(ovText, 600, r3Y - 3);
   ctx.restore();
 
   // เส้นแบ่งแถว
   ctx.strokeStyle = "#E2E8F0";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(70, r1Y + 18);
-  ctx.lineTo(730, r1Y + 18);
+  ctx.moveTo(65, r3Y + 20);
+  ctx.lineTo(735, r3Y + 20);
   ctx.stroke();
 
-  // แถวที่ 2: ความตรงตัวบุคคล
-  const r2Y = r1Y + 52;
+  // แถวที่ 4: ความตรงตัวบุคคล
+  const r4Y = r3Y + 50;
   ctx.fillStyle = "#64748B";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("ความตรงตัวบุคคล (Face Match):", 70, r2Y);
-  ctx.fillStyle = "#16A34A";
-  ctx.font = "bold 15px sans-serif";
+  ctx.fillText("ความตรงตัวบุคคล (Face Match):", 65, r4Y);
+  ctx.fillStyle = appState.faceMatchPassed ? "#16A34A" : "#DC2626";
+  ctx.font = "bold 14px sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(`ตรง ${appState.faceMatchPercent || 90}% (ผ่าน)`, 730, r2Y);
+  ctx.fillText(`ตรง ${appState.faceMatchPercent || 90}% (${appState.faceMatchPassed ? 'ผ่าน' : 'ไม่ผ่าน'})`, 730, r4Y);
 
-  // แถวที่ 3: พนักงานขับรถ
-  const r3Y = r2Y + 45;
+  // แถวที่ 5: พนักงานขับรถ
+  const r5Y = r4Y + 40;
   ctx.fillStyle = "#64748B";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("พนักงานขับรถ:", 70, r3Y);
+  ctx.fillText("พนักงานขับรถ:", 65, r5Y);
   ctx.fillStyle = "#0F172A";
-  ctx.font = "bold 15px sans-serif";
+  ctx.font = "bold 14px sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(driver.driverName || "-", 730, r3Y);
+  ctx.fillText(driver.driverName || "-", 730, r5Y);
 
-  // แถวที่ 4: อีเมลพนักงาน
-  const r4Y = r3Y + 45;
+  // แถวที่ 6: อีเมลพนักงาน
+  const r6Y = r5Y + 40;
   ctx.fillStyle = "#64748B";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("อีเมลพนักงาน:", 70, r4Y);
+  ctx.fillText("อีเมลพนักงาน:", 65, r6Y);
   ctx.fillStyle = "#334155";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(driver.email || "-", 730, r4Y);
+  ctx.fillText(driver.email || "-", 730, r6Y);
 
-  // แถวที่ 5: ทะเบียนรถ
-  const r5Y = r4Y + 45;
+  // แถวที่ 7: ทะเบียนรถ
+  const r7Y = r6Y + 40;
   ctx.fillStyle = "#64748B";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("ทะเบียนรถ:", 70, r5Y);
+  ctx.fillText("ทะเบียนรถ:", 65, r7Y);
   ctx.fillStyle = "#0F172A";
-  ctx.font = "bold 15px sans-serif";
+  ctx.font = "bold 14px sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(driver.vehiclePlate || "-", 730, r5Y);
+  ctx.fillText(driver.vehiclePlate || "-", 730, r7Y);
 
-  // แถวที่ 6: พิกัด GPS
-  const r6Y = r5Y + 45;
+  // แถวที่ 8: พิกัด GPS
+  const r8Y = r7Y + 40;
   ctx.fillStyle = "#64748B";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("พิกัด GPS:", 70, r6Y);
+  ctx.fillText("พิกัด GPS:", 65, r8Y);
   ctx.fillStyle = "#334155";
   ctx.font = "13px sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(appState.gps.text || "-", 730, r6Y);
+  ctx.fillText(appState.gps.text || "-", 730, r8Y);
 
-  // แถวที่ 7: เวลาที่บันทึก
-  const r7Y = r6Y + 45;
+  // แถวที่ 9: เวลาที่บันทึก
+  const r9Y = r8Y + 40;
   ctx.fillStyle = "#64748B";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText("เวลาที่บันทึก:", 70, r7Y);
+  ctx.fillText("เวลาที่บันทึก:", 65, r9Y);
   ctx.fillStyle = "#334155";
   ctx.font = "14px sans-serif";
   ctx.textAlign = "right";
   const nowThai = new Date().toLocaleString("th-TH");
-  ctx.fillText(nowThai, 730, r7Y);
+  ctx.fillText(nowThai, 730, r9Y);
 
-  // แถวที่ 8: ตราประทับความถูกต้อง
-  const r8Y = r7Y + 42;
+  // แถวที่ 10: ตราประทับความถูกต้อง
+  const r10Y = r9Y + 38;
   ctx.fillStyle = "#059669";
   ctx.font = "bold 12px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("✓ VERIFIED DIGITAL INSPECTION RECORD • GOOGLE DRIVE ARCHIVE", 400, r8Y);
+  ctx.fillText("✓ VERIFIED DIGITAL INSPECTION RECORD • GOOGLE DRIVE ARCHIVE", 400, r10Y);
 
   // 6. ส่วนท้าย (Footer)
   ctx.fillStyle = "#0F172A";
@@ -1667,7 +2010,7 @@ async function generateCompositeReportCard() {
 
   ctx.fillStyle = "#94A3B8";
   ctx.font = "12px sans-serif";
-  ctx.fillText("หจก. ทั่วไทยขนส่งมงคล • ระบบตรวจวัดแอลกอฮอล์พนักงานขับรถขนส่ง", 400, 1096);
+  ctx.fillText("หจก. ทั่วไทยขนส่งมงคล • ระบบตรวจวัดแอลกอฮอล์และสุขภาพพนักงานขับรถขนส่ง", 400, 1096);
 
   const reportDataUrl = canvas.toDataURL("image/jpeg", 0.92);
   appState.reportImageBase64 = reportDataUrl;
@@ -1719,6 +2062,10 @@ window.downloadReportCardImage = async function() {
 
 async function handleSubmitData() {
   const remarks = (document.getElementById("summaryRemarks").value || "").trim();
+  const bp = appState.bp || { sys: 120, dia: 80, pulse: 75, status: "ความดันปกติ", isPass: true };
+  const isAlcoholPass = appState.testStatus === "ผ่าน" && appState.alcoholValue < 0.01;
+  const isOverallPass = isAlcoholPass && bp.isPass && appState.faceMatchPassed;
+  const overallStatus = isOverallPass ? "ผ่านพร้อมปฏิบัติงาน" : "ไม่ผ่านเกณฑ์";
 
   const confirmResult = await Swal.fire({
     title: "ยืนยันการบันทึกรายงาน?",
@@ -1727,14 +2074,15 @@ async function handleSubmitData() {
         <div><strong>พนักงาน:</strong> ${appState.driver ? appState.driver.driverName : '-'}</div>
         <div><strong>Face Match 1:1:</strong> <span class="font-bold text-emerald-600">${appState.faceMatchPercent}%</span></div>
         <div><strong>ผลตรวจแอลกอฮอล์:</strong> <span class="${appState.testStatus === 'ผ่าน' ? 'text-emerald-600 font-bold' : 'text-red-600 font-bold'}">${appState.testStatus} (${appState.alcoholValue.toFixed(2)} mg%)</span></div>
+        <div><strong>ความดันโลหิตและชีพจร:</strong> <span class="${bp.isPass ? 'text-emerald-600 font-bold' : 'text-amber-600 font-bold'}">${bp.sys}/${bp.dia} mmHg (${bp.pulse} bpm) - ${bp.status}</span></div>
         <div><strong>พิกัด:</strong> ${appState.gps.text}</div>
       </div>
     `,
-    icon: appState.testStatus === "ผ่าน" ? "question" : "warning",
+    icon: isOverallPass ? "question" : "warning",
     showCancelButton: true,
     confirmButtonText: "ยืนยันส่งข้อมูล",
     cancelButtonText: "ตรวจสอบอีกครั้ง",
-    confirmButtonColor: appState.testStatus === "ผ่าน" ? "#2563eb" : "#dc2626"
+    confirmButtonColor: isOverallPass ? "#2563eb" : "#dc2626"
   });
 
   if (!confirmResult.isConfirmed) return;
@@ -1774,7 +2122,7 @@ async function handleSubmitData() {
       saveGasWebAppUrl(enteredUrl.trim());
       targetGasUrl = enteredUrl.trim();
     } else {
-      return; // ไม่อนุญาตให้จำลองว่าสำเร็จเพื่อป้องกันความสับสน
+      return;
     }
   }
 
@@ -1784,6 +2132,7 @@ async function handleSubmitData() {
       <div class="space-y-2 text-xs text-slate-500">
         <div>กำลังอัปโหลดภาพถ่ายไปยัง Google Drive...</div>
         <div>กำลังเพิ่มแถวข้อมูลลงใน Google Sheet...</div>
+        <div>กำลังส่งการแจ้งเตือนไปยัง LINE / Telegram...</div>
       </div>
     `,
     allowOutsideClick: false,
@@ -1811,13 +2160,19 @@ async function handleSubmitData() {
     vehiclePlate: appState.driver ? appState.driver.vehiclePlate : "-",
     alcoholValue: appState.alcoholValue.toFixed(2),
     status: appState.testStatus,
+    bpSys: bp.sys,
+    bpDia: bp.dia,
+    bpPulse: bp.pulse,
+    bpStatus: bp.status,
+    overallStatus: overallStatus,
     faceMatchPercent: appState.faceMatchPercent + "%",
     latitude: appState.gps.lat || "",
     longitude: appState.gps.lng || "",
     reportImageBase64: reportCardBase64 || "",
-    faceImageBase64: appState.facePhotoBase64,
-    meterImageBase64: appState.meterPhotoBase64,
-    verificationMethod: "Face 1:1 Matching & AI OCR",
+    faceImageBase64: appState.facePhotoBase64 || "",
+    meterImageBase64: appState.meterPhotoBase64 || "",
+    bpPhotoBase64: (bp.photoBase64 || ""),
+    verificationMethod: "Face 1:1 Matching, AI OCR & Health BP",
     remarks: remarks || "ตรวจก่อนปฏิบัติหน้าที่ประจำวัน"
   };
 
@@ -1839,13 +2194,13 @@ async function handleSubmitData() {
     }
 
     if (responseSuccess) {
-      if (appState.testStatus === "ผ่าน") {
+      if (isOverallPass) {
         Swal.fire({
           icon: "success",
           title: "บันทึกข้อมูลสำเร็จ!",
           html: `
             <p class="text-sm text-slate-700">${responseMsg}</p>
-            <p class="text-xs text-emerald-600 font-semibold mt-2">✓ ผ่านเกณฑ์ 0.00 mg% ขับขี่ปลอดภัยด้วยความระมัดระวังครับ</p>
+            <p class="text-xs text-emerald-600 font-semibold mt-2">✓ ผ่านเกณฑ์แอลกอฮอล์ 0.00 mg% และความดันปกติ ขับขี่ปลอดภัยด้วยความระมัดระวังครับ</p>
           `,
           confirmButtonColor: "#2563eb",
           confirmButtonText: "ตกลง (ตรวจคนถัดไป)"
@@ -1854,10 +2209,10 @@ async function handleSubmitData() {
         });
       } else {
         Swal.fire({
-          icon: "error",
+          icon: "warning",
           title: "บันทึกผลการตรวจ: ไม่ผ่านเกณฑ์!",
           html: `
-            <p class="text-sm text-red-600 font-bold">ตรวจพบแอลกอฮอล์ ${appState.alcoholValue.toFixed(2)} mg%</p>
+            <p class="text-sm text-red-600 font-bold">ผลการตรวจ: ${appState.testStatus === 'ไม่ผ่าน' ? 'แอลกอฮอล์ ' + appState.alcoholValue.toFixed(2) + ' mg%' : bp.status}</p>
             <p class="text-xs text-slate-600 mt-2">ระบบได้บันทึกรายงานแจ้งเตือนเรียบร้อยแล้ว ห้ามปฏิบัติหน้าที่ขับขี่เด็ดขาด</p>
           `,
           confirmButtonColor: "#dc2626",
@@ -1888,14 +2243,29 @@ function resetApplication() {
   appState.testStatus = "ผ่าน";
   appState.faceMatchPercent = 0;
   appState.faceMatchPassed = false;
+  appState.bp = {
+    sys: 120,
+    dia: 80,
+    pulse: 75,
+    status: "ความดันปกติ",
+    isPass: true,
+    photoBase64: null
+  };
 
   resetFaceCameraUI();
   resetMeterCameraUI();
+  resetBPCameraUI();
 
   const remarksInput = document.getElementById("summaryRemarks");
   if (remarksInput) remarksInput.value = "";
   const alcoholInput = document.getElementById("alcoholValueInput");
   if (alcoholInput) alcoholInput.value = "0.00";
+  const sysInput = document.getElementById("bpSysInput");
+  if (sysInput) sysInput.value = "120";
+  const diaInput = document.getElementById("bpDiaInput");
+  if (diaInput) diaInput.value = "80";
+  const pulseInput = document.getElementById("bpPulseInput");
+  if (pulseInput) pulseInput.value = "75";
 
   goToStep(1);
 }

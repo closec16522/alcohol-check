@@ -65,27 +65,32 @@
       </div>
     </div>
     
-    <!-- Multi-step Indicator Bar -->
-    <div class="bg-slate-950/40 px-4 py-2 border-t border-white/10">
-      <div class="max-w-3xl mx-auto flex items-center justify-between text-xs">
-        <div id="stepIndicator1" class="flex items-center space-x-1.5 text-blue-300 font-medium">
+    <!-- Multi-step Indicator Bar (5 Steps) -->
+    <div class="bg-slate-950/40 px-3 py-2 border-t border-white/10 overflow-x-auto">
+      <div class="max-w-3xl mx-auto flex items-center justify-between text-xs min-w-[340px]">
+        <div id="stepIndicator1" class="flex items-center space-x-1 text-blue-300 font-bold">
           <span class="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">1</span>
-          <span>ยืนยันผู้ขับ</span>
+          <span>ผู้ขับ</span>
         </div>
-        <div class="flex-1 h-0.5 mx-2 bg-slate-700"></div>
-        <div id="stepIndicator2" class="flex items-center space-x-1.5 text-slate-400">
+        <div class="flex-1 h-0.5 mx-1.5 bg-slate-700"></div>
+        <div id="stepIndicator2" class="flex items-center space-x-1 text-slate-400">
           <span class="w-5 h-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-[10px] font-bold">2</span>
-          <span>สแกนใบหน้า</span>
+          <span>ใบหน้า</span>
         </div>
-        <div class="flex-1 h-0.5 mx-2 bg-slate-700"></div>
-        <div id="stepIndicator3" class="flex items-center space-x-1.5 text-slate-400">
+        <div class="flex-1 h-0.5 mx-1.5 bg-slate-700"></div>
+        <div id="stepIndicator3" class="flex items-center space-x-1 text-slate-400">
           <span class="w-5 h-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-[10px] font-bold">3</span>
-          <span>ตรวจเครื่องเป่า</span>
+          <span>แอลกอฮอล์</span>
         </div>
-        <div class="flex-1 h-0.5 mx-2 bg-slate-700"></div>
-        <div id="stepIndicator4" class="flex items-center space-x-1.5 text-slate-400">
+        <div class="flex-1 h-0.5 mx-1.5 bg-slate-700"></div>
+        <div id="stepIndicator4" class="flex items-center space-x-1 text-slate-400">
           <span class="w-5 h-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-[10px] font-bold">4</span>
-          <span>ส่งผลตรวจ</span>
+          <span>ความดัน</span>
+        </div>
+        <div class="flex-1 h-0.5 mx-1.5 bg-slate-700"></div>
+        <div id="stepIndicator5" class="flex items-center space-x-1 text-slate-400">
+          <span class="w-5 h-5 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center text-[10px] font-bold">5</span>
+          <span>สรุป</span>
         </div>
       </div>
     </div>
@@ -240,8 +245,8 @@
         <!-- Master Face Reference vs Live Camera Comparison View -->
         <div class="relative w-full aspect-[3/4] bg-slate-900 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-300">
           
-          <!-- Live Video Stream -->
-          <video id="faceVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <!-- Live Video Stream (Mirrored for natural selfie view) -->
+          <video id="faceVideo" autoplay playsinline muted class="w-full h-full object-cover camera-mirror"></video>
           
           <!-- Captured Photo Result (Hidden initially) -->
           <img id="faceCapturedImg" class="w-full h-full object-cover hidden" alt="Captured Face">
@@ -442,41 +447,174 @@
           </div>
         </div>
 
-        <!-- Next to Step 4 Button (No HTML disabled to guarantee iOS Safari tap dispatch) -->
-        <button type="button" id="btnNextToStep4" onclick="handleNextToStep4()"
+        <!-- Next to Step 4 Button -->
+        <button type="button" id="btnNextToStep4" onclick="goToStep(4)"
                 class="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
-          <span>ถัดไป: สรุปและบันทึกส่งระบบ</span>
+          <span>ถัดไป: ตรวจวัดความดันโลหิต</span>
           <i class="fa-solid fa-arrow-right text-xs"></i>
         </button>
       </div>
     </section>
 
     <!-- ============================================================== -->
-    <!-- STEP 4: Review, GPS Location & Submit to Google Sheet         -->
+    <!-- STEP 4: Blood Pressure & Pulse Inspection                      -->
     <!-- ============================================================== -->
     <section id="step4" class="step-content hidden glass-panel p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200">
+      <div class="text-center mb-4">
+        <div class="inline-flex p-3 rounded-2xl bg-rose-50 text-rose-600 mb-2">
+          <i class="fa-solid fa-heart-pulse text-2xl"></i>
+        </div>
+        <h2 class="text-lg font-bold text-slate-800">ขั้นตอนที่ 4: ตรวจวัดความดันโลหิตและชีพจร</h2>
+        <p class="text-xs text-slate-500 mt-1">ถ่ายภาพหน้าปัดเครื่องวัดความดัน และบันทึกค่า SYS / DIA / PULSE เพื่อประเมินความพร้อมร่างกาย</p>
+      </div>
+
+      <div class="max-w-md mx-auto space-y-4">
+        <!-- Live Camera for BP Monitor -->
+        <div class="relative w-full aspect-[4/3] bg-slate-900 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-300">
+          <video id="bpVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <img id="bpCapturedImg" class="w-full h-full object-cover hidden" alt="Captured BP Monitor">
+
+          <div id="bpReticle" class="meter-guide">
+            <span class="meter-guide-corner corner-tl"></span>
+            <span class="meter-guide-corner corner-tr"></span>
+            <span class="meter-guide-corner corner-bl"></span>
+            <span class="meter-guide-corner corner-br"></span>
+          </div>
+
+          <div id="bpScanLine" class="laser-scan-line hidden"></div>
+
+          <!-- Camera Open Prompt -->
+          <div id="bpCameraPrompt" class="absolute inset-0 bg-slate-900/85 flex flex-col items-center justify-center text-center p-6 text-white">
+            <div class="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl mb-3">
+              <i class="fa-solid fa-heart-pulse"></i>
+            </div>
+            <p class="text-sm font-semibold mb-1">เปิดกล้องถ่ายหน้าปัดเครื่องวัดความดัน</p>
+            <p class="text-xs text-slate-400 max-w-xs mb-4">หันกล้องหลังไปยังหน้าจอเครื่องวัดความดัน ให้เห็นตัวเลขชัดเจน</p>
+            <button type="button" id="btnStartBPCamera"
+                    class="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-semibold rounded-xl shadow-lg transition flex items-center space-x-2 cursor-pointer">
+              <i class="fa-solid fa-video"></i>
+              <span>เปิดกล้องถ่ายเครื่องวัดความดัน</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="flex items-center justify-between space-x-3 pt-1">
+          <button type="button" id="btnBackToStep3From4"
+                  class="py-2.5 px-4 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 font-medium rounded-xl text-xs transition">
+            <i class="fa-solid fa-chevron-left mr-1"></i> ย้อนกลับ
+          </button>
+
+          <button type="button" id="btnCaptureBP"
+                  class="flex-1 py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-sm transition shadow-lg shutter-btn flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
+            <i class="fa-solid fa-camera text-base"></i>
+            <span>กดถ่ายรูปเครื่องวัดความดัน</span>
+          </button>
+
+          <button type="button" id="btnRetakeBP" class="hidden py-2.5 px-4 bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium rounded-xl text-xs transition">
+            <i class="fa-solid fa-arrows-rotate mr-1"></i> ถ่ายใหม่
+          </button>
+        </div>
+
+        <!-- BP Numeric Inputs & Health Status Card -->
+        <div id="bpResultCard" class="bg-slate-900 border border-slate-700 rounded-2xl p-4 text-white space-y-3 shadow-md">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span class="text-xs font-semibold text-rose-300 flex items-center">
+              <i class="fa-solid fa-notes-medical mr-1.5"></i> บันทึกค่าความดันโลหิตและชีพจร
+            </span>
+            <div id="bpStatusBadge" class="text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-500/20 text-emerald-300">
+              ความดันปกติ
+            </div>
+          </div>
+
+          <!-- 3 Numeric Boxes: SYS / DIA / PULSE -->
+          <div class="grid grid-cols-3 gap-2">
+            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700 text-center">
+              <span class="text-[10px] text-slate-400 block font-medium">SYS (ตัวบน)</span>
+              <input type="number" id="bpSysInput" value="120" min="60" max="250"
+                     class="font-digital text-2xl font-bold bg-transparent text-emerald-400 w-full text-center outline-none focus:text-white">
+              <span class="text-[9px] text-slate-500 block">mmHg</span>
+            </div>
+            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700 text-center">
+              <span class="text-[10px] text-slate-400 block font-medium">DIA (ตัวล่าง)</span>
+              <input type="number" id="bpDiaInput" value="80" min="40" max="150"
+                     class="font-digital text-2xl font-bold bg-transparent text-emerald-400 w-full text-center outline-none focus:text-white">
+              <span class="text-[9px] text-slate-500 block">mmHg</span>
+            </div>
+            <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700 text-center">
+              <span class="text-[10px] text-slate-400 block font-medium">PULSE (ชีพจร)</span>
+              <input type="number" id="bpPulseInput" value="75" min="30" max="200"
+                     class="font-digital text-2xl font-bold bg-transparent text-rose-400 w-full text-center outline-none focus:text-white">
+              <span class="text-[9px] text-slate-500 block">ครั้ง/นาที</span>
+            </div>
+          </div>
+
+          <!-- Health Safety Advice -->
+          <p id="bpSafetyNotice" class="text-[11px] text-emerald-300/90 bg-emerald-950/40 p-2 rounded-lg border border-emerald-900/50">
+            ✓ ค่าความดันอยู่ในเกณฑ์ปกติ (SYS &lt; 140, DIA &lt; 90) ร่างกายพร้อมขับขี่ปลอดภัย
+          </p>
+
+          <!-- Quick Preset Buttons for BP -->
+          <div class="pt-2 border-t border-slate-800 space-y-1.5">
+            <span class="text-[10px] text-slate-400 font-semibold block text-center">ปุ่มลัดระบุค่ามาตรฐานรวดเร็ว:</span>
+            <div class="grid grid-cols-3 gap-2">
+              <button type="button" onclick="setBPPreset(120, 80, 75)"
+                      class="py-2 px-1 bg-emerald-900/80 hover:bg-emerald-800 active:scale-95 text-emerald-200 border border-emerald-500/50 rounded-xl text-[11px] font-bold transition flex items-center justify-center">
+                120/80 (ปกติ)
+              </button>
+              <button type="button" onclick="setBPPreset(135, 85, 78)"
+                      class="py-2 px-1 bg-amber-950/80 hover:bg-amber-900 active:scale-95 text-amber-200 border border-amber-500/50 rounded-xl text-[11px] font-bold transition flex items-center justify-center">
+                135/85 (เฝ้าระวัง)
+              </button>
+              <button type="button" onclick="setBPPreset(145, 95, 85)"
+                      class="py-2 px-1 bg-red-950/80 hover:bg-red-900 active:scale-95 text-red-200 border border-red-500/50 rounded-xl text-[11px] font-bold transition flex items-center justify-center">
+                &gt;140/90 (สูง)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Next to Step 5 Button -->
+        <button type="button" id="btnNextToStep5" onclick="goToStep(5)"
+                class="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
+          <span>ถัดไป: สรุปรายงานและส่งผลตรวจ</span>
+          <i class="fa-solid fa-arrow-right text-xs"></i>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============================================================== -->
+    <!-- STEP 5: Review, GPS Location & Submit to Google Sheet         -->
+    <!-- ============================================================== -->
+    <section id="step5" class="step-content hidden glass-panel p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200">
       <div class="text-center mb-5">
         <div class="inline-flex p-3 rounded-2xl bg-emerald-50 text-emerald-600 mb-2">
           <i class="fa-solid fa-clipboard-check text-2xl"></i>
         </div>
-        <h2 class="text-lg font-bold text-slate-800">ขั้นตอนที่ 4: สรุปผลและยืนยันการส่งรายงาน</h2>
-        <p class="text-xs text-slate-500 mt-1">โปรดตรวจสอบความถูกต้องของข้อมูลก่อนบันทึกลง Google Sheet</p>
+        <h2 class="text-lg font-bold text-slate-800">ขั้นตอนที่ 5: สรุปผลและยืนยันการส่งรายงาน</h2>
+        <p class="text-xs text-slate-500 mt-1">โปรดตรวจสอบความถูกต้องของข้อมูลก่อนบันทึกลง Google Sheet & Drive</p>
       </div>
 
       <div class="max-w-md mx-auto space-y-4">
 
-        <!-- Two Photos Comparison -->
-        <div class="grid grid-cols-2 gap-3">
-          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-            <span class="text-[11px] font-semibold text-slate-600 block mb-1.5">1. รูปถ่ายใบหน้า Check-in</span>
+        <!-- Three Photos Comparison (Face + Meter + BP) -->
+        <div class="grid grid-cols-3 gap-2">
+          <div class="bg-slate-50 p-2 rounded-xl border border-slate-200 text-center">
+            <span class="text-[10px] font-semibold text-slate-600 block mb-1">1. ใบหน้า 1:1</span>
             <div class="w-full aspect-[3/4] bg-slate-200 rounded-lg overflow-hidden border border-slate-300">
               <img id="summaryFaceImg" class="w-full h-full object-cover" alt="Face Summary">
             </div>
           </div>
-          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-            <span class="text-[11px] font-semibold text-slate-600 block mb-1.5">2. รูปหน้าปัดเครื่องเป่า</span>
+          <div class="bg-slate-50 p-2 rounded-xl border border-slate-200 text-center">
+            <span class="text-[10px] font-semibold text-slate-600 block mb-1">2. เครื่องเป่า</span>
             <div class="w-full aspect-[3/4] bg-slate-200 rounded-lg overflow-hidden border border-slate-300">
               <img id="summaryMeterImg" class="w-full h-full object-cover" alt="Meter Summary">
+            </div>
+          </div>
+          <div class="bg-slate-50 p-2 rounded-xl border border-slate-200 text-center">
+            <span class="text-[10px] font-semibold text-slate-600 block mb-1">3. วัดความดัน</span>
+            <div class="w-full aspect-[3/4] bg-slate-200 rounded-lg overflow-hidden border border-slate-300">
+              <img id="summaryBPImg" class="w-full h-full object-cover" alt="BP Summary">
             </div>
           </div>
         </div>
@@ -484,9 +622,15 @@
         <!-- Result & Driver Summary Box -->
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-2">
           <div class="flex justify-between items-center pb-2 border-b border-slate-200">
-            <span class="text-slate-500">ผลการตรวจวัด:</span>
+            <span class="text-slate-500">ผลตรวจแอลกอฮอล์:</span>
             <span id="summaryResultTag" class="font-bold px-2.5 py-1 rounded-md text-emerald-700 bg-emerald-100 border border-emerald-300">
               ผ่าน (0.00 mg%)
+            </span>
+          </div>
+          <div class="flex justify-between items-center pb-2 border-b border-slate-200">
+            <span class="text-slate-500">ผลตรวจความดันและชีพจร:</span>
+            <span id="summaryBPTag" class="font-bold px-2.5 py-1 rounded-md text-emerald-700 bg-emerald-100 border border-emerald-300">
+              120/80 mmHg (75 bpm) • ปกติ
             </span>
           </div>
           <div class="flex justify-between items-center">
@@ -533,13 +677,13 @@
           </button>
 
           <button type="button" id="btnFinalSubmit"
-                  class="w-full py-3.5 px-4 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:from-blue-800 hover:to-indigo-900 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2">
+                  class="w-full py-3.5 px-4 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:from-blue-800 hover:to-indigo-900 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
             <i class="fa-solid fa-cloud-arrow-up text-base"></i>
             <span>ยืนยันและบันทึกข้อมูลเข้าระบบ</span>
           </button>
 
-          <button type="button" id="btnBackToStep3"
-                  class="w-full py-2.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-xl text-xs transition">
+          <button type="button" id="btnBackToStep4From5" onclick="goToStep(4)"
+                  class="w-full py-2.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-xl text-xs transition cursor-pointer">
             <i class="fa-solid fa-chevron-left mr-1"></i> ย้อนกลับไปแก้ไข
           </button>
         </div>

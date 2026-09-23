@@ -190,7 +190,12 @@ async function captureMasterFace() {
   canvas.width = videoEl.videoWidth || 640;
   canvas.height = videoEl.videoHeight || 480;
   const ctx = canvas.getContext("2d");
+  // กลับด้านแนวนอน (Mirror) เพื่อให้ภาพที่บันทึกตรงกับที่เห็นในจอกระจก ไม่หลอกตา
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
   ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
 
   const photoDataUrl = canvas.toDataURL("image/jpeg", 0.90);
   regState.masterFaceBase64 = photoDataUrl;
