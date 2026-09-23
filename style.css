@@ -31,6 +31,12 @@ body {
   background-color: #0f172a;
 }
 
+/* Mirror view for selfie / front camera */
+.camera-mirror {
+  transform: scaleX(-1);
+  -webkit-transform: scaleX(-1);
+}
+
 /* Reticle / Face Oval Guide */
 .face-guide {
   position: absolute;
