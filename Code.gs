@@ -193,11 +193,21 @@ function getSystemConfig(key, defaultValue) {
 function callGeminiFromGas(params) {
   var apiKey = getSystemConfig("GEMINI_API_KEY", "");
   if (!apiKey || apiKey.length < 10) {
-    throw new Error("ไม่พบ GEMINI_API_KEY ในชีต System_Config");
+    throw new Error("ไม่พบ GEMINI_API_KEY ในชีต System_Config กรุณาระบุ API Key");
   }
-  
-  var model = getSystemConfig("GEMINI_MODEL", "gemini-2.5-flash");
-  var endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+
+  var preferredModel = getSystemConfig("GEMINI_MODEL", "gemini-2.0-flash");
+  var candidateModels = [
+    preferredModel,
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash"
+  ];
+
+  var modelsToTry = [];
+  candidateModels.forEach(function(m) {
+    if (m && modelsToTry.indexOf(m) === -1) modelsToTry.push(m);
+  });
   
   var parts = [];
   if (params.prompt) {
@@ -244,22 +254,33 @@ function callGeminiFromGas(params) {
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   };
-  
-  var response = UrlFetchApp.fetch(endpoint, options);
-  var code = response.getResponseCode();
-  var text = response.getContentText();
-  
-  if (code !== 200) {
-    throw new Error("Gemini API Error (" + code + "): " + text.slice(0, 200));
+
+  var lastError = "";
+  for (var i = 0; i < modelsToTry.length; i++) {
+    var modelName = modelsToTry[i];
+    var endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey;
+    try {
+      var response = UrlFetchApp.fetch(endpoint, options);
+      var code = response.getResponseCode();
+      var text = response.getContentText();
+      
+      if (code === 200) {
+        var json = JSON.parse(text);
+        var candidateText = json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts && json.candidates[0].content.parts[0].text;
+        if (candidateText) {
+          return JSON.parse(candidateText);
+        }
+      } else {
+        lastError = "Model " + modelName + " Error (" + code + "): " + text.slice(0, 180);
+        Logger.log(lastError);
+      }
+    } catch (e) {
+      lastError = e.message;
+      Logger.log("Model " + modelName + " exception: " + e.message);
+    }
   }
-  
-  var json = JSON.parse(text);
-  var candidateText = json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts && json.candidates[0].content.parts[0].text;
-  if (!candidateText) {
-    throw new Error("Gemini AI ไม่ได้ส่งผลลัพธ์ข้อความกลับมา");
-  }
-  
-  return JSON.parse(candidateText);
+
+  throw new Error("Gemini AI Error: " + lastError);
 }
 
 /**
@@ -702,8 +723,23 @@ function doPost(e) {
         Logger.log("Telegram alert error: " + tgErr.message);
       }
 
+      var lineAlertData = {
+        alertText: alertText,
+        driverName: driverName,
+        driverId: driverId,
+        vehiclePlate: vehiclePlate,
+        alcoholVal: alcoholVal,
+        alcoholStatus: alcoholStatus,
+        bpSys: bpSys,
+        bpDia: bpDia,
+        bpPulse: bpPulse,
+        bpStatus: bpStatus,
+        overallStatus: overallStatus,
+        fullTimestamp: fullTimestamp,
+        reportPhotoUrl: reportPhotoUrl
+      };
       try {
-        sendLineAlert(alertText);
+        sendLineAlert(lineAlertData);
       } catch (lineErr) {
         Logger.log("LINE alert error: " + lineErr.message);
       }
@@ -762,39 +798,189 @@ function sendTelegramAlert(message, photoUrl) {
 /**
  * ส่งข้อความแจ้งเตือนผ่าน LINE Messaging API หรือ LINE Notify
  */
-function sendLineAlert(message) {
+function sendLineAlert(data) {
   var lineChannelToken = getSystemConfig("LINE_CHANNEL_ACCESS_TOKEN", NOTIFICATION_CONFIG.LINE_CHANNEL_ACCESS_TOKEN);
   var lineTargetId = getSystemConfig("LINE_TARGET_ID", NOTIFICATION_CONFIG.LINE_TARGET_ID);
   var lineNotifyToken = getSystemConfig("LINE_NOTIFY_TOKEN", NOTIFICATION_CONFIG.LINE_NOTIFY_TOKEN);
 
-  // 1. LINE Messaging API
+  var alertObj = (typeof data === "object") ? data : { alertText: data.toString() };
+  var isFail = alertObj.overallStatus !== "ผ่านพร้อมปฏิบัติงาน";
+  var headerColor = isFail ? "#DC2626" : "#059669";
+  var headerTitle = isFail ? "⚠️ แจ้งเตือน: ผลตรวจไม่ผ่านเกณฑ์!" : "✅ ผลตรวจสุขภาพพร้อมปฏิบัติงาน";
+
+  // 1. LINE Messaging API (ส่งการ์ด Flex Message สวยงามพร้อมปุ่มเปิดดูรูปรายงาน)
   if (lineChannelToken && lineTargetId) {
+    var flexBubble = {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        backgroundColor: headerColor,
+        paddingAll: "16px",
+        contents: [
+          {
+            type: "text",
+            text: headerTitle,
+            color: "#FFFFFF",
+            weight: "bold",
+            size: "md"
+          },
+          {
+            type: "text",
+            text: "หจก. ทั่วไทยขนส่งมงคล (Smart Inspection)",
+            color: "#F1F5F9",
+            size: "xxs",
+            margin: "xs"
+          }
+        ]
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "พนักงาน:", color: "#64748B", size: "xs", flex: 3 },
+              { type: "text", text: (alertObj.driverName || "-") + " (" + (alertObj.driverId || "-") + ")", weight: "bold", color: "#1E293B", size: "xs", flex: 6 }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "ทะเบียนรถ:", color: "#64748B", size: "xs", flex: 3 },
+              { type: "text", text: alertObj.vehiclePlate || "-", weight: "bold", color: "#1E293B", size: "xs", flex: 6 }
+            ]
+          },
+          {
+            type: "separator",
+            margin: "sm"
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "แอลกอฮอล์:", color: "#64748B", size: "xs", flex: 3 },
+              {
+                type: "text",
+                text: (alertObj.alcoholVal || "0.00") + " mg% (" + (alertObj.alcoholStatus || "-") + ")",
+                weight: "bold",
+                color: (parseFloat(alertObj.alcoholVal) > 0 || alertObj.alcoholStatus !== "ผ่าน") ? "#DC2626" : "#059669",
+                size: "xs",
+                flex: 6
+              }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "ความดัน/ชีพจร:", color: "#64748B", size: "xs", flex: 3 },
+              {
+                type: "text",
+                text: alertObj.bpSys + "/" + alertObj.bpDia + " mmHg (" + alertObj.bpPulse + " bpm)",
+                weight: "bold",
+                color: "#1E293B",
+                size: "xs",
+                flex: 6
+              }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "ผลประเมิน:", color: "#64748B", size: "xs", flex: 3 },
+              {
+                type: "text",
+                text: alertObj.overallStatus || "-",
+                weight: "bold",
+                color: isFail ? "#DC2626" : "#059669",
+                size: "xs",
+                flex: 6
+              }
+            ]
+          },
+          {
+            type: "box",
+            layout: "horizontal",
+            contents: [
+              { type: "text", text: "เวลาตรวจ:", color: "#64748B", size: "xxs", flex: 3 },
+              { type: "text", text: alertObj.fullTimestamp || "-", color: "#94A3B8", size: "xxs", flex: 6 }
+            ]
+          }
+        ]
+      }
+    };
+
+    if (alertObj.reportPhotoUrl && alertObj.reportPhotoUrl !== "-") {
+      flexBubble.footer = {
+        type: "box",
+        layout: "vertical",
+        spacing: "sm",
+        contents: [
+          {
+            type: "button",
+            style: "primary",
+            color: isFail ? "#DC2626" : "#2563EB",
+            height: "sm",
+            action: {
+              type: "uri",
+              label: "📄 ดูรูปรายงานสรุปตรวจวัด",
+              uri: alertObj.reportPhotoUrl
+            }
+          }
+        ]
+      };
+    }
+
     var pushUrl = "https://api.line.me/v2/bot/message/push";
     var pushPayload = {
       to: lineTargetId,
-      messages: [{ type: "text", text: message }]
+      messages: [
+        {
+          type: "flex",
+          altText: (isFail ? "⚠️ [ด่วน] ผลตรวจไม่ผ่าน: " : "✅ ผลตรวจพร้อมปฏิบัติงาน: ") + alertObj.driverName + " (" + alertObj.vehiclePlate + ")",
+          contents: flexBubble
+        }
+      ]
     };
-    UrlFetchApp.fetch(pushUrl, {
-      method: "post",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + lineChannelToken
-      },
-      payload: JSON.stringify(pushPayload),
-      muteHttpExceptions: true
-    });
-    return;
+
+    try {
+      var pushRes = UrlFetchApp.fetch(pushUrl, {
+        method: "post",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + lineChannelToken
+        },
+        payload: JSON.stringify(pushPayload),
+        muteHttpExceptions: true
+      });
+      Logger.log("LINE Flex Card Push response (" + pushRes.getResponseCode() + "): " + pushRes.getContentText());
+      if (pushRes.getResponseCode() === 200) return;
+    } catch (pushErr) {
+      Logger.log("LINE Push error: " + pushErr.message);
+    }
   }
 
-  // 2. LINE Notify (Fallback)
+  // 2. Fallback: LINE Notify
   if (lineNotifyToken) {
     var notifyUrl = "https://notify-api.line.me/api/notify";
+    var notifyPayload = { message: alertObj.alertText || "รายงานตรวจวัดพนักงานขับรถ" };
+    if (alertObj.reportPhotoUrl && alertObj.reportPhotoUrl !== "-") {
+      notifyPayload.imageThumbnail = alertObj.reportPhotoUrl;
+      notifyPayload.imageFullsize = alertObj.reportPhotoUrl;
+    }
     UrlFetchApp.fetch(notifyUrl, {
       method: "post",
       headers: {
         "Authorization": "Bearer " + lineNotifyToken
       },
-      payload: { message: message },
+      payload: notifyPayload,
       muteHttpExceptions: true
     });
   }
