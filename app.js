@@ -7,8 +7,10 @@
 
 // --- การตั้งค่าระบบ (Configuration) ---
 const CONFIG = {
-  // Google Gemini AI Vision (สำหรับอ่านค่าหน้าปัดเครื่องเป่า, ความดัน, และตรวจสอบใบหน้า 1:1)
-  GEMINI_API_KEY: "AIzaSyD-ESJAUJJd5XaSIzyVpQsJ_CjIVsUpucU",
+  // Google Gemini AI Vision (อ่านค่าหน้าปัดเครื่องเป่า, ความดัน, และตรวจสอบใบหน้า 1:1)
+  // หมายเหตุความปลอดภัย: Key จะถูกเก็บอย่างปลอดภัยบน Google Sheet (System_Config)
+  // และประมวลผลผ่าน Google Apps Script Gateway โดยไม่มีการเปิดเผย Key บน GitHub
+  GEMINI_API_KEY: "", // ปลอดภัย: ไม่ใส่คีย์บน GitHub
   GEMINI_MODEL: "gemini-2.5-flash",
 
   // ใส่ Google Apps Script Web App Deployment URL ที่นี่
@@ -123,11 +125,50 @@ window.saveGeminiApiKey = saveGeminiApiKey;
 
 /**
  * เรียกใช้ Google Gemini 2.5 Flash Multimodal Vision API
+ * รูปแบบ Secure Gateway: ประมวลผลผ่าน Google Apps Script โดยดึง Key จาก Google Sheet ปลอดภัย 100%
  */
 async function callGeminiVision({ imageBase64, prompt, systemInstruction = "", image2Base64 = null }) {
-  const apiKey = getGeminiApiKey();
+  // 1. ตรวจสอบว่ามีการใส่คีย์ทดสอบส่วนบุคคลไว้ใน LocalStorage หรือไม่
+  const localKey = localStorage.getItem("TTMK_GEMINI_KEY");
+
+  // 2. หากไม่มี Custom Key ในเครื่อง ให้ส่งคำขอผ่าน Google Apps Script Gateway (ซึ่งเก็บ Key ลับไว้บน Google Sheet)
+  if (!localKey) {
+    const gasUrl = getGasWebAppUrl();
+    if (gasUrl && gasUrl.startsWith("https://script.google.com/macros/s/")) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 16000);
+      try {
+        const gasResponse = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "geminiProxy",
+            prompt: prompt,
+            systemInstruction: systemInstruction,
+            imageBase64: imageBase64,
+            image2Base64: image2Base64
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (gasResponse.ok) {
+          const resJson = await gasResponse.json();
+          if (resJson && resJson.success && resJson.data) {
+            return resJson.data;
+          }
+        }
+      } catch (gasErr) {
+        clearTimeout(timeoutId);
+        console.warn("GAS Gemini Gateway notice:", gasErr);
+      }
+    }
+  }
+
+  // 3. Fallback: กรณีมีคีย์ใน LocalStorage หรือทดสอบตรง
+  const apiKey = localKey || CONFIG.GEMINI_API_KEY;
   if (!apiKey || apiKey.length < 10) {
-    throw new Error("ไม่พบ Google Gemini API Key ในระบบ");
+    throw new Error("ระบบเชื่อมต่อ AI ผ่าน Google Apps Script Gateway ขัดข้อง กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต");
   }
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent?key=${apiKey}`;
@@ -185,7 +226,7 @@ async function callGeminiVision({ imageBase64, prompt, systemInstruction = "", i
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini API Error details:", errText);
+      console.error("Gemini Direct API Error details:", errText);
       throw new Error(`Gemini API Error (HTTP ${res.status})`);
     }
 
