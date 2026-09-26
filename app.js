@@ -7,6 +7,10 @@
 
 // --- การตั้งค่าระบบ (Configuration) ---
 const CONFIG = {
+  // Google Gemini AI Vision (สำหรับอ่านค่าหน้าปัดเครื่องเป่า, ความดัน, และตรวจสอบใบหน้า 1:1)
+  GEMINI_API_KEY: "AIzaSyD-ESJAUJJd5XaSIzyVpQsJ_CjIVsUpucU",
+  GEMINI_MODEL: "gemini-2.5-flash",
+
   // ใส่ Google Apps Script Web App Deployment URL ที่นี่
   GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbygXhKLj8jXNkY70z8w5_UYVbrAET_SfJ6l33HX16Tu1pkK9UsVWgc60rRnv1WcaeKeFg/exec",
   SPREADSHEET_ID: "1JM-i8_nrGR7-VDEY82QZ5l5JMJTIBOIsuqOSQSrcD3Y",
@@ -100,6 +104,104 @@ function saveGasWebAppUrl(url) {
   console.log("GAS WebApp URL updated:", cleanUrl);
 }
 window.saveGasWebAppUrl = saveGasWebAppUrl;
+
+// ดึง Google Gemini API Key ที่พร้อมใช้งาน
+function getGeminiApiKey() {
+  const localKey = localStorage.getItem("TTMK_GEMINI_KEY");
+  if (localKey && localKey.trim().length > 10) return localKey.trim();
+  return CONFIG.GEMINI_API_KEY;
+}
+window.getGeminiApiKey = getGeminiApiKey;
+
+function saveGeminiApiKey(key) {
+  const cleanKey = (key || "").trim();
+  localStorage.setItem("TTMK_GEMINI_KEY", cleanKey);
+  CONFIG.GEMINI_API_KEY = cleanKey;
+  console.log("Gemini API Key updated successfully");
+}
+window.saveGeminiApiKey = saveGeminiApiKey;
+
+/**
+ * เรียกใช้ Google Gemini 2.5 Flash Multimodal Vision API
+ */
+async function callGeminiVision({ imageBase64, prompt, systemInstruction = "", image2Base64 = null }) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey || apiKey.length < 10) {
+    throw new Error("ไม่พบ Google Gemini API Key ในระบบ");
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.GEMINI_MODEL || "gemini-2.5-flash"}:generateContent?key=${apiKey}`;
+
+  const parts = [];
+  if (prompt) {
+    parts.push({ text: prompt });
+  }
+
+  // เตรียมรูปภาพที่ 1
+  const cleanB64_1 = imageBase64.includes(",") ? imageBase64.split(",")[1] : imageBase64;
+  parts.push({
+    inline_data: {
+      mime_type: "image/jpeg",
+      data: cleanB64_1
+    }
+  });
+
+  // เตรียมรูปภาพที่ 2 (กรณีเปรียบเทียบใบหน้า 1:1)
+  if (image2Base64) {
+    const cleanB64_2 = image2Base64.includes(",") ? image2Base64.split(",")[1] : image2Base64;
+    parts.push({
+      inline_data: {
+        mime_type: "image/jpeg",
+        data: cleanB64_2
+      }
+    });
+  }
+
+  const payload = {
+    contents: [{ parts: parts }],
+    generationConfig: {
+      response_mime_type: "application/json",
+      temperature: 0.1
+    }
+  };
+
+  if (systemInstruction) {
+    payload.systemInstruction = {
+      parts: [{ text: systemInstruction }]
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 14000);
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini API Error details:", errText);
+      throw new Error(`Gemini API Error (HTTP ${res.status})`);
+    }
+
+    const data = await res.json();
+    const rawJsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawJsonText) {
+      throw new Error("ไม่มีข้อมูลตอบกลับจาก Gemini AI");
+    }
+
+    return JSON.parse(rawJsonText);
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+window.callGeminiVision = callGeminiVision;
 
 // ฟังก์ชันล็อกรหัสผ่านก่อนเข้าหน้าลงทะเบียน/ตั้งค่าระบบ (Passcode: 44Cone38)
 window.promptAdminRegisterPasscode = async function() {
@@ -203,41 +305,50 @@ window.editCurrentDriverProfile = async function() {
   }
 };
 
-// หน้าต่างตั้งค่า Google Apps Script Web App URL
+// หน้าต่างตั้งค่าระบบ (Google Apps Script & Gemini API Key)
 async function openGasSettingsModal() {
-  const currentUrl = getGasWebAppUrl();
-  const isDefault = !currentUrl || currentUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID");
+  const currentGasUrl = getGasWebAppUrl();
+  const currentGeminiKey = getGeminiApiKey();
+  const isDefaultGas = !currentGasUrl || currentGasUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID");
 
-  const { value: newUrl } = await Swal.fire({
-    title: "ตั้งค่า Google Apps Script URL",
+  const { value: formValues } = await Swal.fire({
+    title: "⚙️ ตั้งค่าระบบ (Backend & AI)",
     html: `
-      <div class="text-xs text-slate-600 text-left space-y-2 mb-3">
-        <p><b>สถานะปัจจุบัน:</b> ${isDefault ? '<span class="text-red-500 font-bold">ยังไม่ได้เชื่อมต่อ (Demo/Placeholder)</span>' : '<span class="text-emerald-600 font-bold">เชื่อมต่อแล้ว</span>'}</p>
-        <p class="text-slate-500 text-[11px]">วาง Web App URL ที่ได้จากการ Deploy ใน Google Apps Script (ลงท้ายด้วย <code>/exec</code>) เพื่อบันทึกผลตรวจและส่งรูปขึ้น Google Drive / Sheet จริง</p>
+      <div class="text-xs text-slate-600 text-left space-y-3 mb-2">
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">1. Google Apps Script Web App URL:</label>
+          <input id="swalGasUrl" class="swal2-input !mt-0 !w-full !text-xs" placeholder="https://script.google.com/.../exec" value="${isDefaultGas ? '' : currentGasUrl}">
+          <p class="text-[10px] text-slate-400 mt-1">ใช้บันทึกประวัติลง Google Sheet และอัปโหลดรูปลง Google Drive</p>
+        </div>
+        <div class="pt-2 border-t border-slate-200">
+          <label class="block font-bold text-slate-700 mb-1">2. Google Gemini AI API Key:</label>
+          <input id="swalGeminiKey" class="swal2-input !mt-0 !w-full !text-xs font-mono" placeholder="AIzaSyD..." value="${currentGeminiKey || ''}">
+          <p class="text-[10px] text-slate-400 mt-1">ใช้สำหรับอ่านตัวเลขดิจิทัลจากเครื่องเป่า/ความดัน และตรวจสอบใบหน้า 1:1</p>
+        </div>
       </div>
     `,
-    input: "text",
-    inputValue: isDefault ? "" : currentUrl,
-    inputPlaceholder: "https://script.google.com/macros/s/AKfycb.../exec",
+    focusConfirm: false,
     showCancelButton: true,
-    confirmButtonText: "บันทึก URL",
+    confirmButtonText: "บันทึกการตั้งค่า",
     cancelButtonText: "ยกเลิก",
     confirmButtonColor: "#16a34a",
     cancelButtonColor: "#64748b",
-    inputValidator: (val) => {
-      if (val && (!val.includes("script.google.com") || !val.includes("/exec"))) {
-        return "URL ต้องขึ้นต้นด้วย https://script.google.com และลงท้ายด้วย /exec";
-      }
+    preConfirm: () => {
+      const gas = document.getElementById("swalGasUrl").value.trim();
+      const gemini = document.getElementById("swalGeminiKey").value.trim();
+      return { gas, gemini };
     }
   });
 
-  if (newUrl) {
-    saveGasWebAppUrl(newUrl);
+  if (formValues) {
+    if (formValues.gas) saveGasWebAppUrl(formValues.gas);
+    if (formValues.gemini) saveGeminiApiKey(formValues.gemini);
+
     Swal.fire({
       icon: "success",
-      title: "บันทึก URL สำเร็จ!",
-      text: "ระบบจะใช้ URL นี้ในการส่งข้อมูลและรูปภาพเข้า Google Drive และ Sheet ทันที",
-      timer: 1500,
+      title: "บันทึกการตั้งค่าสำเร็จ!",
+      text: "ระบบอัปเดตการเชื่อมต่อ Google Apps Script และ Google Gemini AI เรียบร้อยแล้ว",
+      timer: 1800,
       showConfirmButton: false
     });
   }
@@ -547,7 +658,6 @@ function switchUser() {
  * จัดการเปลี่ยนหน้า Step (1-5)
  */
 function goToStep(stepNumber) {
-  stopCurrentCamera();
   appState.currentStep = stepNumber;
 
   for (let i = 1; i <= 5; i++) {
@@ -581,24 +691,25 @@ function goToStep(stepNumber) {
         pipEl.classList.add("hidden");
       }
     }
-    // เปิดกล้องหน้าสดอัตโนมัติทันที
+    // เปิดกล้องหน้าสดสำหรับยืนยันตัวตน
     if (!appState.facePhotoBase64) {
       resetFaceCameraUI();
-      startCamera("user", "faceVideo");
+      startCamera("user", "faceVideo", true);
     }
   } else if (stepNumber === 3) {
-    // เปิดกล้องหลังสดอัตโนมัติสำหรับเครื่องเป่า
+    // กล้องหลังสำหรับเครื่องเป่าแอลกอฮอล์
     if (!appState.meterPhotoBase64) {
       resetMeterCameraUI();
-      startCamera("environment", "meterVideo");
+      startCamera("environment", "meterVideo", true);
     }
   } else if (stepNumber === 4) {
-    // เปิดกล้องหลังสดอัตโนมัติสำหรับเครื่องวัดความดัน
-    if (!appState.bp.photoBase64) {
+    // กล้องหลังสำหรับเครื่องวัดความดัน
+    if (!appState.bp || !appState.bp.photoBase64) {
       resetBPCameraUI();
-      startCamera("environment", "bpVideo");
+      startCamera("environment", "bpVideo", true);
     }
   } else if (stepNumber === 5) {
+    stopCurrentCamera();
     prepareSummaryStep();
   }
 
@@ -767,9 +878,7 @@ function applyDriverData(driver, isAutoLogin) {
 // =========================================================================
 // STRICT REAL CAMERA MANAGEMENT (WebRTC MediaDevices)
 // =========================================================================
-async function startCamera(facingMode, videoElementId) {
-  stopCurrentCamera();
-
+async function startCamera(facingMode, videoElementId, isAuto = false) {
   const videoEl = document.getElementById(videoElementId);
   let promptId = "faceCameraPrompt";
   let captureBtnId = "btnCaptureFace";
@@ -788,13 +897,34 @@ async function startCamera(facingMode, videoElementId) {
   const captureBtn = document.getElementById(captureBtnId);
   const scanLine = document.getElementById(scanLineId);
 
+  // ตรวจสอบว่ามีสตรีมเดิมที่ยัง Active และเป็น facingMode เดียวกันหรือไม่
+  if (appState.currentStream && appState.currentFacingMode === facingMode) {
+    if (videoEl && videoEl.srcObject !== appState.currentStream) {
+      videoEl.srcObject = appState.currentStream;
+      try { await videoEl.play(); } catch (e) {}
+    }
+    if (promptEl) promptEl.classList.add("hidden");
+    if (scanLine) scanLine.classList.remove("hidden");
+    if (captureBtn) {
+      captureBtn.removeAttribute("disabled");
+      captureBtn.disabled = false;
+      captureBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+      captureBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-lg");
+    }
+    return;
+  }
+
+  stopCurrentCamera();
+
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    Swal.fire({
-      icon: "error",
-      title: "เบราว์เซอร์ไม่รองรับกล้องสด",
-      text: "โปรดใช้งานผ่าน Google Chrome หรือ Safari บนมือถือ",
-      confirmButtonColor: "#2563eb"
-    });
+    if (!isAuto) {
+      Swal.fire({
+        icon: "error",
+        title: "เบราว์เซอร์ไม่รองรับกล้องสด",
+        text: "โปรดใช้งานผ่าน Google Chrome หรือ Safari บนมือถือ",
+        confirmButtonColor: "#2563eb"
+      });
+    }
     return;
   }
 
@@ -810,6 +940,7 @@ async function startCamera(facingMode, videoElementId) {
 
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     appState.currentStream = stream;
+    appState.currentFacingMode = facingMode;
     videoEl.srcObject = stream;
     await videoEl.play();
 
@@ -818,18 +949,21 @@ async function startCamera(facingMode, videoElementId) {
 
     if (captureBtn) {
       captureBtn.removeAttribute("disabled");
+      captureBtn.disabled = false;
       captureBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
       captureBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-lg");
     }
 
   } catch (err) {
-    console.error("Camera access error:", err);
-    Swal.fire({
-      icon: "error",
-      title: "ไม่สามารถเข้าถึงกล้องได้",
-      text: "กรุณากด 'อนุญาต' (Allow) สิทธิ์กล้องในเบราว์เซอร์ เพื่อถ่ายรูปยืนยันตัวตนสด",
-      confirmButtonColor: "#2563eb"
-    });
+    console.warn("Camera access notice:", err);
+    if (!isAuto) {
+      Swal.fire({
+        icon: "error",
+        title: "ไม่สามารถเข้าถึงกล้องได้",
+        text: "กรุณากด 'อนุญาต' (Allow) สิทธิ์กล้องในเบราว์เซอร์ เพื่อถ่ายรูปยืนยันตัวตนสด",
+        confirmButtonColor: "#2563eb"
+      });
+    }
   }
 }
 
@@ -993,21 +1127,79 @@ window.toDirectDriveImageUrl = toDirectDriveImageUrl;
  */
 async function performFaceMatching(liveCanvas, ctx) {
   const driver = appState.driver;
-  
-  // ถ้าไม่มีข้อมูลคนขับ ให้ผ่านแบบ Liveness พื้นฐาน
   if (!driver) {
-    return { passed: true, percent: 90, note: "ไม่มีข้อมูลคนขับ" };
+    return { passed: false, percent: 0, note: "ไม่พบข้อมูลพนักงานในระบบ" };
   }
 
+  const masterPhotoSrc = toDirectDriveImageUrl(driver.masterFacePhoto || driver.masterFaceUrl);
+  if (!masterPhotoSrc) {
+    return {
+      passed: false,
+      percent: 0,
+      note: "ไม่พบรูปถ่ายต้นแบบ (Master Face) ของพนักงานในระบบ กรุณาลงทะเบียนหรืออัปเดตใบหน้าก่อน"
+    };
+  }
+
+  const liveBase64 = liveCanvas.toDataURL("image/jpeg", 0.90);
+
+  // 1. ตรวจสอบเปรียบเทียบใบหน้า 1:1 ด้วย Google Gemini AI Vision (แม่นยำสูงสุด)
   try {
-    // 1. ตรวจจับและสกัดเวกเตอร์ใบหน้าสด (Live Face Descriptor: 128-d)
+    let masterBase64 = null;
+    if (masterPhotoSrc.startsWith("data:image")) {
+      masterBase64 = masterPhotoSrc;
+    } else {
+      const masterImg = await loadImageAsync(masterPhotoSrc);
+      if (masterImg) {
+        const c = document.createElement("canvas");
+        c.width = masterImg.naturalWidth || masterImg.width || 400;
+        c.height = masterImg.naturalHeight || masterImg.height || 500;
+        const cx = c.getContext("2d");
+        cx.drawImage(masterImg, 0, 0, c.width, c.height);
+        masterBase64 = c.toDataURL("image/jpeg", 0.90);
+      }
+    }
+
+    if (masterBase64) {
+      console.log("Starting Google Gemini 1:1 Face Verification...");
+      const geminiResult = await callGeminiVision({
+        imageBase64: masterBase64,
+        image2Base64: liveBase64,
+        systemInstruction: "You are a biometric security AI for vehicle driver check-in. Compare Photo 1 (Registered Employee Profile) and Photo 2 (Live Camera Snapshot). Strictly determine if they are the EXACT SAME PERSON.",
+        prompt: `Compare Photo 1 (Employee Master Face) with Photo 2 (Live Check-in Selfie).
+Are they the SAME INDIVIDUAL?
+Examine facial structure, eyes, nose, mouth shape, and facial landmarks.
+Return strict JSON:
+{
+  "isSamePerson": boolean (true ONLY if both photos clearly show the exact same person, false if different people),
+  "similarityScore": integer 0 to 100,
+  "confidence": number between 0.0 and 1.0,
+  "reason": "short explanation in Thai"
+}`
+      });
+
+      console.log("Gemini 1:1 Face Verification Result:", geminiResult);
+      if (geminiResult && typeof geminiResult.isSamePerson === "boolean") {
+        const passed = geminiResult.isSamePerson === true && (geminiResult.similarityScore >= 65);
+        return {
+          passed: passed,
+          percent: geminiResult.similarityScore || (passed ? 88 : 25),
+          note: geminiResult.reason || (passed ? "ตรวจสอบใบหน้า 1:1 ตรงกับรูปต้นแบบ" : "ใบหน้าไม่ตรงกับพนักงานที่ลงทะเบียนไว้"),
+          geminiVerified: true
+        };
+      }
+    }
+  } catch (geminiErr) {
+    console.warn("Gemini face verification error, falling back to Face-API:", geminiErr);
+  }
+
+  // 2. Fallback: Face-API.js เวกเตอร์ 128 มิติ (เกณฑ์เข้มงวด: ไม่มี Free-pass เด็ดขาด)
+  try {
     let liveDescriptor = null;
     if (window.faceapi && appState.faceModelsLoaded) {
       let detection = await faceapi.detectSingleFace(liveCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 }))
                                    .withFaceLandmarks()
                                    .withFaceDescriptor();
       if (!detection) {
-        // Fallback รองด้วย inputSize 320 เผื่อระยะห่างหรือแสง
         detection = await faceapi.detectSingleFace(liveCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
                                  .withFaceLandmarks()
                                  .withFaceDescriptor();
@@ -1017,48 +1209,33 @@ async function performFaceMatching(liveCanvas, ctx) {
       }
     }
 
-    // 2. ดึงหรือสกัดเวกเตอร์ใบหน้าต้นแบบ (Master Face Descriptor: 128-d)
+    if (!liveDescriptor) {
+      return { 
+        passed: false, 
+        percent: 0, 
+        note: "ตรวจไม่พบใบหน้าหน้ากล้อง กรุณามองตรง ถอดหมวก/แว่นตา และอยู่ในที่สว่าง" 
+      };
+    }
+
     let masterDescriptor = driver.masterFaceDescriptor;
     if (typeof masterDescriptor === "string" && masterDescriptor.startsWith("[")) {
-      try {
-        masterDescriptor = JSON.parse(masterDescriptor);
-      } catch (e) {
-        masterDescriptor = null;
-      }
+      try { masterDescriptor = JSON.parse(masterDescriptor); } catch (e) { masterDescriptor = null; }
     }
 
-    // ตรวจสอบว่า Master Descriptor เป็น 128-d Vector มาตรฐานหรือไม่
-    // หากไม่มี หรือเป็นเวกเตอร์เก่าที่ไม่ใช่ 128-d (เช่น 49-d pixel fallback) ให้สกัดใหม่จากรูปต้นแบบโดยอัตโนมัติ
-    const masterPhotoSrc = toDirectDriveImageUrl(driver.masterFacePhoto || driver.masterFaceUrl);
     if ((!masterDescriptor || !Array.isArray(masterDescriptor) || masterDescriptor.length !== 128) && masterPhotoSrc && window.faceapi && appState.faceModelsLoaded) {
-      try {
-        console.log("Master descriptor is incompatible or missing. Auto-extracting 128-d vector from:", masterPhotoSrc);
-        const masterImg = await loadImageAsync(masterPhotoSrc);
-        if (masterImg) {
-          let masterDet = await faceapi.detectSingleFace(masterImg, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 }))
-                                       .withFaceLandmarks()
-                                       .withFaceDescriptor();
-          if (!masterDet) {
-            masterDet = await faceapi.detectSingleFace(masterImg, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+      const masterImg = await loadImageAsync(masterPhotoSrc);
+      if (masterImg) {
+        let masterDet = await faceapi.detectSingleFace(masterImg, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 }))
                                      .withFaceLandmarks()
                                      .withFaceDescriptor();
-          }
-          if (masterDet && masterDet.descriptor) {
-            masterDescriptor = Array.from(masterDet.descriptor);
-            driver.masterFaceDescriptor = masterDescriptor;
-            console.log("Successfully extracted 128-d Master Descriptor on the fly!");
-            try {
-              localStorage.setItem("TTMK_DRIVER_PROFILE", JSON.stringify(driver));
-            } catch (e) {}
-          }
+        if (masterDet && masterDet.descriptor) {
+          masterDescriptor = Array.from(masterDet.descriptor);
+          driver.masterFaceDescriptor = masterDescriptor;
         }
-      } catch (err) {
-        console.warn("Notice during dynamic master extraction:", err);
       }
     }
 
-    // 3. ทำการเปรียบเทียบเมื่อมีเวกเตอร์ 128-d ทั้งสองฝั่ง
-    if (liveDescriptor && masterDescriptor && Array.isArray(masterDescriptor) && liveDescriptor.length === 128 && masterDescriptor.length === 128) {
+    if (liveDescriptor && masterDescriptor && Array.isArray(masterDescriptor) && masterDescriptor.length === 128) {
       let sumSq = 0;
       for (let i = 0; i < 128; i++) {
         const diff = liveDescriptor[i] - masterDescriptor[i];
@@ -1067,43 +1244,30 @@ async function performFaceMatching(liveCanvas, ctx) {
       const distance = Math.sqrt(sumSq);
       console.log("1:1 Face Match Euclidean Distance:", distance);
 
-      // คำนวณความเหมือน: มาตรฐาน dlib / Face-API distance <= 0.60 คือบุคคลเดียวกัน
-      let similarityPercent;
-      if (distance <= 0.60) {
-        // ช่วงที่ผ่านเกณฑ์ (distance 0.0 -> 100%, 0.40 -> 89%, 0.60 -> 76%)
-        similarityPercent = Math.round(100 - (distance / 0.60) * 24);
-      } else if (distance <= 0.80) {
-        // ช่วงใกล้เคียง (distance 0.60 -> 76%, 0.80 -> 50%)
-        similarityPercent = Math.round(76 - ((distance - 0.60) / 0.20) * 26);
-      } else {
-        // ไม่ตรง
-        similarityPercent = Math.max(10, Math.round(50 - ((distance - 0.80) / 0.40) * 40));
-      }
-      const passed = (similarityPercent >= 75) || (distance <= 0.60);
+      // เกณฑ์เข้มงวด: distance <= 0.58 ถึงจะผ่าน
+      const passed = distance <= 0.58;
+      let similarityPercent = passed 
+        ? Math.round(100 - (distance / 0.58) * 20) 
+        : Math.max(10, Math.round(50 - ((distance - 0.58) / 0.40) * 40));
 
-      return { passed: passed, percent: similarityPercent, distance: distance };
-    }
-
-    // 4. กรณีตรวจพบใบหน้าสดจริงหน้ากล้อง แต่เวกเตอร์รูปต้นแบบไม่สมบูรณ์
-    if (liveDescriptor && liveDescriptor.length === 128) {
-      console.log("Live face detected (Liveness Confirmed). Master vector was unavailable.");
       return { 
-        passed: true, 
-        percent: 88, 
-        note: "ยืนยันตัวตนด้วยการตรวจจับใบหน้าสดสำเร็จ" 
+        passed: passed, 
+        percent: similarityPercent, 
+        distance: distance, 
+        note: passed ? "ตรวจสอบใบหน้า 1:1 ตรงกับรูปต้นแบบ" : "ใบหน้าไม่ตรงกับพนักงานที่ลงทะเบียนไว้" 
       };
     }
 
-    // 5. กรณีตรวจไม่พบใบหน้าหน้ากล้องสด (เช่น ปิดกล้อง หรือไม่มีคนอยู่หน้ากล้อง)
+    // กรณีไม่มีเวกเตอร์ต้นแบบ และ Gemini ใช้งานไม่ได้ ไม่อนุญาตให้ผ่าน
     return { 
       passed: false, 
-      percent: 25, 
-      note: "ไม่สามารถตรวจจับใบหน้าได้ กรุณามองตรงหน้ากล้อง ถอดหมวก/แว่นตา และอยู่ในที่สว่าง" 
+      percent: 20, 
+      note: "ไม่สามารถยืนยันใบหน้าได้เนื่องจากไม่มีข้อมูลใบหน้าต้นแบบ กรุณาอัปเดตใบหน้าใหม่" 
     };
 
   } catch (err) {
     console.warn("Face matching exception:", err);
-    return { passed: true, percent: 85, note: "การยืนยันตัวตนสำรอง" };
+    return { passed: false, percent: 15, note: "เกิดข้อผิดพลาดในการตรวจสอบใบหน้า" };
   }
 }
 
@@ -1268,186 +1432,210 @@ async function runOCRAnalysis(fullCanvas) {
 
   let detectedValue = 0.00;
   let isRedFail = false;
+  let geminiSuccess = false;
 
+  // 1. ลองอ่านค่าด้วย Google Gemini 2.5 Flash Multimodal Vision API เป็นอันดับแรก (ความแม่นยำสูงที่สุด 99%+)
   try {
-    const cropCanvas = document.createElement("canvas");
-    const cropW = Math.floor(fullCanvas.width * 0.60);
-    const cropH = Math.floor(fullCanvas.height * 0.45);
-    const cropX = Math.floor((fullCanvas.width - cropW) / 2);
-    const cropY = Math.floor((fullCanvas.height - cropH) / 2);
+    if (ocrStatusBadge) {
+      ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-blue-500/20 text-blue-300 animate-pulse";
+      ocrStatusBadge.innerHTML = `<i class="fa-solid fa-brain mr-1"></i> Google Gemini AI กำลังอ่านตัวเลข...`;
+    }
 
-    cropCanvas.width = cropW;
-    cropCanvas.height = cropH;
-    const cropCtx = cropCanvas.getContext("2d");
-    cropCtx.drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    const photoDataUrl = fullCanvas.toDataURL("image/jpeg", 0.90);
+    const geminiResult = await callGeminiVision({
+      imageBase64: photoDataUrl,
+      systemInstruction: "You are an expert AI OCR reader specializing in digital breathalyzer / alcohol testing devices with 7-segment LED/LCD and color displays. Accurately extract the alcohol measurement value displayed on the screen.",
+      prompt: `Analyze this image of an alcohol breathalyzer screen.
+Read the numeric measurement value shown on the digital display (such as 0.00, 0.20, 0.47, 0.55, 0.70, etc.).
+Check if the device indicates alcohol detected (isFail = true, or red warning screen) or zero (isFail = false).
+Return strict JSON:
+{
+  "detected": boolean,
+  "alcoholValue": number (e.g. 0.00, 0.20, 0.47, 0.55),
+  "unit": string (e.g. "mg%", "mg/100ml", "mg/L", "BAC"),
+  "isFail": boolean,
+  "confidence": number between 0.0 and 1.0,
+  "rawText": "exact text visible on screen"
+}`
+    });
 
-    // 1. ตรวจจับหน้าจอสีแดงเตือน (Red Screen Fail Detection)
-    const imgData = cropCtx.getImageData(0, 0, cropW, cropH);
-    const d = imgData.data;
-    let redCount = 0;
-    let sampleCount = 0;
+    console.log("Gemini Alcohol OCR Result:", geminiResult);
 
-    for (let i = 0; i < d.length; i += 16) {
-      const r = d[i];
-      const g = d[i + 1];
-      const b = d[i + 2];
-      sampleCount++;
-      // โทนแดงสว่างเตือนของเครื่องเป่าแอลกอฮอล์
-      if (r > 110 && r > g * 1.3 && r > b * 1.3) {
-        redCount++;
+    if (geminiResult && typeof geminiResult.alcoholValue === "number") {
+      detectedValue = geminiResult.alcoholValue;
+      isRedFail = Boolean(geminiResult.isFail || detectedValue > 0.00);
+      geminiSuccess = true;
+    }
+  } catch (geminiErr) {
+    console.warn("Gemini Alcohol OCR notice, falling back to local Tesseract:", geminiErr);
+  }
+
+  // 2. Fallback: หาก Gemini ไม่สามารถใช้งานได้ (ออฟไลน์หรือไม่มีเน็ต) ให้ใช้ Tesseract + 7-Segment Preprocessing
+  if (!geminiSuccess) {
+    try {
+      const cropCanvas = document.createElement("canvas");
+      const cropW = Math.floor(fullCanvas.width * 0.60);
+      const cropH = Math.floor(fullCanvas.height * 0.45);
+      const cropX = Math.floor((fullCanvas.width - cropW) / 2);
+      const cropY = Math.floor((fullCanvas.height - cropH) / 2);
+
+      cropCanvas.width = cropW;
+      cropCanvas.height = cropH;
+      const cropCtx = cropCanvas.getContext("2d");
+      cropCtx.drawImage(fullCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // ตรวจจับหน้าจอสีแดงเตือน (Red Screen Fail Detection)
+      const imgData = cropCtx.getImageData(0, 0, cropW, cropH);
+      const d = imgData.data;
+      let redCount = 0;
+      let sampleCount = 0;
+
+      for (let i = 0; i < d.length; i += 16) {
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+        sampleCount++;
+        if (r > 110 && r > g * 1.3 && r > b * 1.3) {
+          redCount++;
+        }
       }
-    }
 
-    const redRatio = redCount / sampleCount;
-    if (redRatio > 0.15) {
-      isRedFail = true;
-      console.log("RED SCREEN FAIL DETECTED! Ratio:", redRatio);
-    }
-
-    // 2. ใช้ 7-Segment Adaptive Color Binarizer สกัดตัวเลขโดยเฉพาะ
-    preprocess7SegmentLCD(cropCtx, cropW, cropH, isRedFail);
-
-    // 3. รัน Tesseract OCR อ่านตัวเลข
-    if (window.Tesseract) {
-      const ocrPromise = (async () => {
-        const worker = await Tesseract.createWorker('eng');
-        await worker.setParameters({
-          tessedit_char_whitelist: '0123456789.OoDdlISsBbZzFAILfailPASSpass'
-        });
-        const { data: { text } } = await worker.recognize(cropCanvas);
-        await worker.terminate();
-        return text;
-      })();
-
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("OCR Timeout")), 2800));
-      const rawText = await Promise.race([ocrPromise, timeoutPromise]);
-      const cleanStr = (rawText || "").trim();
-      const lower = cleanStr.toLowerCase();
-
-      console.log("Raw OCR Text from LCD:", cleanStr);
-
-      // 1. ตรวจจับคำว่า fail ชัดเจนจากหน้าจอ (Fail / FALL)
-      if (lower.includes("fail") || lower.includes("fall")) {
+      const redRatio = redCount / sampleCount;
+      if (redRatio > 0.15) {
         isRedFail = true;
       }
 
-      // 2. กำจัดคำศัพท์และปุ่มบนเครื่องเป่าออกก่อน เพื่อไม่ให้ตัวอักษรกลายเป็นตัวเลขขยะ
-      // เช่น 'Esc' มีตัว 's' ที่มักถูกแปลงเป็นเลข '5' หรือ 'Fail' ที่ 'l' มักถูกแปลงเป็นเลข '1' รวมกันเป็น '51'
-      let sanitized = cleanStr
-        .replace(/\b(fail|fall|pass|esc|menu|set|test|ready|blow|wait|ok|err)\b/gi, ' ')
-        .replace(/(mg\s*\/?\s*100\s*ml|mg\s*\/?\s*l|%?\s*bac|g\s*\/?\s*l)/gi, ' ');
+      // ใช้ 7-Segment Adaptive Color Binarizer สกัดตัวเลขโดยเฉพาะ
+      preprocess7SegmentLCD(cropCtx, cropW, cropH, isRedFail);
 
-      // 3. แปลงตัวอักษร 7-segment เฉพาะที่มักสับสนกับตัวเลข
-      let normalized = sanitized
-        .replace(/[OoDd]/g, '0')
-        .replace(/[lI|!]/g, '1')
-        .replace(/[Ss]/g, '5')
-        .replace(/[Bb]/g, '8')
-        .replace(/[Zz]/g, '2');
+      if (window.Tesseract) {
+        const ocrPromise = (async () => {
+          const worker = await Tesseract.createWorker('eng');
+          await worker.setParameters({
+            tessedit_char_whitelist: '0123456789.OoDdlISsBbZzFAILfailPASSpass'
+          });
+          const { data: { text } } = await worker.recognize(cropCanvas);
+          await worker.terminate();
+          return text;
+        })();
 
-      const matches = normalized.match(/\d+(\.\d+)?/g) || [];
-      console.log("OCR Candidate Digits:", matches);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("OCR Timeout")), 2800));
+        const rawText = await Promise.race([ocrPromise, timeoutPromise]);
+        const cleanStr = (rawText || "").trim();
+        const lower = cleanStr.toLowerCase();
 
-      // 4. จัดลำดับความสำคัญของตัวเลข (Priority Matching)
-      let candidateFound = null;
-
-      // Priority 1: ตัวเลข 3 หลัก เช่น 070, 050, 020, 000
-      for (const m of matches) {
-        if (/^0\d{2}$/.test(m)) {
-          candidateFound = m;
-          break;
+        if (lower.includes("fail") || lower.includes("fall")) {
+          isRedFail = true;
         }
-      }
 
-      // Priority 2: ตัวเลขที่มีทศนิยมชัดเจน เช่น 0.00, 0.70, 0.07, 0.50
-      if (!candidateFound) {
+        let sanitized = cleanStr
+          .replace(/\b(fail|fall|pass|esc|menu|set|test|ready|blow|wait|ok|err)\b/gi, ' ')
+          .replace(/(mg\s*\/?\s*100\s*ml|mg\s*\/?\s*l|%?\s*bac|g\s*\/?\s*l)/gi, ' ');
+
+        let normalized = sanitized
+          .replace(/[OoDd]/g, '0')
+          .replace(/[lI|!]/g, '1')
+          .replace(/[Ss]/g, '5')
+          .replace(/[Bb]/g, '8')
+          .replace(/[Zz]/g, '2');
+
+        const matches = normalized.match(/\d+(\.\d+)?/g) || [];
+
+        let candidateFound = null;
         for (const m of matches) {
-          if (/^\d+\.\d+$/.test(m)) {
+          if (/^0\d{2}$/.test(m)) {
             candidateFound = m;
             break;
           }
         }
-      }
 
-      // Priority 3: ตัวเลข 2 หลัก เช่น 70, 50, 20
-      if (!candidateFound) {
-        for (const m of matches) {
-          if (/^\d{2}$/.test(m) && parseInt(m) >= 10) {
-            candidateFound = m;
-            break;
+        if (!candidateFound) {
+          for (const m of matches) {
+            if (/^\d+\.\d+$/.test(m)) {
+              candidateFound = m;
+              break;
+            }
+          }
+        }
+
+        if (!candidateFound) {
+          for (const m of matches) {
+            if (/^\d{2}$/.test(m) && parseInt(m) >= 10) {
+              candidateFound = m;
+              break;
+            }
+          }
+        }
+
+        if (!candidateFound && matches.length > 0) {
+          candidateFound = matches.reduce((a, b) => a.length >= b.length ? a : b);
+        }
+
+        if (candidateFound) {
+          const num = parseFloat(candidateFound);
+          if (!isNaN(num)) {
+            if (candidateFound === "047" || candidateFound === "47") {
+              detectedValue = 0.47;
+              isRedFail = true;
+            } else if (candidateFound === "070" || candidateFound === "70") {
+              detectedValue = 0.70;
+              isRedFail = true;
+            } else if (candidateFound === "050" || candidateFound === "50") {
+              detectedValue = 0.50;
+              isRedFail = true;
+            } else if (candidateFound === "020" || candidateFound === "20") {
+              detectedValue = 0.20;
+              isRedFail = true;
+            } else if (candidateFound === "000" || candidateFound === "00") {
+              detectedValue = 0.00;
+            } else if (/^0\d{2}$/.test(candidateFound)) {
+              detectedValue = num / 100;
+              if (detectedValue >= 0.01) isRedFail = true;
+            } else if (num >= 10) {
+              detectedValue = num / 100;
+              if (detectedValue >= 0.01) isRedFail = true;
+            } else {
+              detectedValue = num;
+              if (detectedValue >= 0.01) isRedFail = true;
+            }
           }
         }
       }
 
-      // Priority 4: ตัวเลขใดๆ ที่ยาวที่สุด
-      if (!candidateFound && matches.length > 0) {
-        candidateFound = matches.reduce((a, b) => a.length >= b.length ? a : b);
+      if (isRedFail && detectedValue < 0.01) {
+        detectedValue = 0.70;
       }
-
-      if (candidateFound) {
-        const num = parseFloat(candidateFound);
-        if (!isNaN(num)) {
-          if (candidateFound === "047" || candidateFound === "47") {
-            detectedValue = 0.47;
-            isRedFail = true;
-          } else if (candidateFound === "070" || candidateFound === "70") {
-            detectedValue = 0.70;
-            isRedFail = true;
-          } else if (candidateFound === "050" || candidateFound === "50") {
-            detectedValue = 0.50;
-            isRedFail = true;
-          } else if (candidateFound === "020" || candidateFound === "20") {
-            detectedValue = 0.20;
-            isRedFail = true;
-          } else if (candidateFound === "000" || candidateFound === "00") {
-            detectedValue = 0.00;
-          } else if (/^0\d{2}$/.test(candidateFound)) {
-            detectedValue = num / 100;
-            if (detectedValue >= 0.01) isRedFail = true;
-          } else if (num >= 10) {
-            detectedValue = num / 100;
-            if (detectedValue >= 0.01) isRedFail = true;
-          } else {
-            detectedValue = num;
-            if (detectedValue >= 0.01) isRedFail = true;
-          }
-        }
+    } catch (err) {
+      console.warn("Local OCR notice:", err.message || err);
+      if (isRedFail && detectedValue < 0.01) {
+        detectedValue = 0.70;
       }
     }
+  }
 
-    // หากจอเป็นสีแดงเตือน (Fail) แต่ OCR ยังอ่านได้ 0.00 ให้เซตค่าเตือน 0.70 ตามหน้าจอ Fail
-    if (isRedFail && detectedValue < 0.01) {
-      detectedValue = 0.70;
-    }
+  // อัปเดตผลลัพธ์ลง UI
+  if (alcoholInput) {
+    alcoholInput.value = detectedValue.toFixed(2);
+  }
+  updateAlcoholEvaluation(detectedValue);
 
-  } catch (err) {
-    console.warn("OCR notice:", err.message || err);
-    if (isRedFail && detectedValue < 0.01) {
-      detectedValue = 0.70;
+  if (ocrStatusBadge) {
+    const aiLabel = geminiSuccess ? "Google Gemini AI: " : "AI OCR: ";
+    if (detectedValue >= 0.01 || isRedFail) {
+      ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-red-500/20 text-red-300";
+      ocrStatusBadge.textContent = `${aiLabel}${detectedValue.toFixed(2)} mg% (FAIL)`;
+    } else {
+      ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-500/20 text-emerald-300";
+      ocrStatusBadge.textContent = `${aiLabel}${detectedValue.toFixed(2)} mg% (PASS)`;
     }
-  } finally {
-    if (alcoholInput) {
-      alcoholInput.value = detectedValue.toFixed(2);
-    }
-    updateAlcoholEvaluation(detectedValue);
+  }
 
-    if (ocrStatusBadge) {
-      if (detectedValue >= 0.01 || isRedFail) {
-        ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-red-500/20 text-red-300";
-        ocrStatusBadge.textContent = "ตรวจพบแอลกอฮอล์ (FAIL)";
-      } else {
-        ocrStatusBadge.className = "text-[10px] px-2 py-0.5 rounded font-bold uppercase bg-emerald-500/20 text-emerald-300";
-        ocrStatusBadge.textContent = "วิเคราะห์เรียบร้อย (PASS)";
-      }
-    }
-
-    // ปลดล็อกปุ่มถัดไปแน่นอน 100%
-    if (nextBtn) {
-      nextBtn.removeAttribute("disabled");
-      nextBtn.disabled = false;
-      nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
-      nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
-    }
+  // ปลดล็อกปุ่มถัดไป
+  if (nextBtn) {
+    nextBtn.removeAttribute("disabled");
+    nextBtn.disabled = false;
+    nextBtn.classList.remove("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+    nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
   }
 }
 
@@ -1657,6 +1845,7 @@ async function captureBPSnapshot() {
   const canvas = document.getElementById("snapshotCanvas");
   const scanLine = document.getElementById("bpScanLine");
   const promptEl = document.getElementById("bpCameraPrompt");
+  const reticleEl = document.getElementById("bpReticle");
   const captureBtn = document.getElementById("btnCaptureBP");
   const retakeBtn = document.getElementById("btnRetakeBP");
   const nextBtn = document.getElementById("btnNextToStep5");
@@ -1686,12 +1875,12 @@ async function captureBPSnapshot() {
   imgEl.classList.remove("hidden");
   if (scanLine) scanLine.classList.add("hidden");
   if (promptEl) promptEl.classList.add("hidden");
+  if (reticleEl) reticleEl.classList.add("hidden");
 
   if (captureBtn) captureBtn.classList.add("hidden");
   if (retakeBtn) retakeBtn.classList.remove("hidden");
 
-  evaluateBloodPressure();
-
+  // ปลดล็อกปุ่มถัดไป
   if (nextBtn) {
     nextBtn.removeAttribute("disabled");
     nextBtn.disabled = false;
@@ -1699,13 +1888,84 @@ async function captureBPSnapshot() {
     nextBtn.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
   }
 
+  // เรียกใช้ Google Gemini 2.5 Flash Vision AI อ่านค่าความดัน SYS / DIA / PULSE
   Swal.fire({
-    icon: "success",
-    title: "บันทึกภาพเครื่องวัดความดันแล้ว",
-    text: "ท่านสามารถตรวจสอบค่า SYS/DIA/PULSE หรือใช้ปุ่มลัดด้านล่างเพื่อยืนยันผล",
-    timer: 1500,
-    showConfirmButton: false
+    title: "AI กำลังอ่านค่าความดัน...",
+    html: `<div class="text-xs text-slate-500">Google Gemini AI กำลังวิเคราะห์ตัวเลข SYS / DIA / PULSE จากหน้าจอ...</div>`,
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
   });
+
+  try {
+    const geminiBP = await callGeminiVision({
+      imageBase64: dataUrl,
+      systemInstruction: "You are an expert medical AI OCR reader for digital blood pressure monitors (sphygmomanometer). Extract systolic (SYS), diastolic (DIA), and pulse rate (PULSE) from the digital LCD display.",
+      prompt: `Analyze this blood pressure monitor screen image.
+Read the 3 digital numbers on the monitor:
+1. SYS (Systolic blood pressure, upper number, usually 90-180 mmHg)
+2. DIA (Diastolic blood pressure, middle number, usually 60-110 mmHg)
+3. PULSE (Heart rate / pulse per minute, bottom number, usually 50-120 bpm)
+
+Return strict JSON:
+{
+  "detected": boolean,
+  "sys": integer (or null if unreadable),
+  "dia": integer (or null if unreadable),
+  "pulse": integer (or null if unreadable),
+  "confidence": number between 0.0 and 1.0,
+  "note": "short explanation"
+}`
+    });
+
+    Swal.close();
+    console.log("Gemini BP OCR Result:", geminiBP);
+
+    if (geminiBP && geminiBP.sys && geminiBP.dia) {
+      const sysInput = document.getElementById("bpSysInput");
+      const diaInput = document.getElementById("bpDiaInput");
+      const pulseInput = document.getElementById("bpPulseInput");
+      if (sysInput) sysInput.value = geminiBP.sys;
+      if (diaInput) diaInput.value = geminiBP.dia;
+      if (pulseInput && geminiBP.pulse) pulseInput.value = geminiBP.pulse;
+
+      evaluateBloodPressure();
+
+      Swal.fire({
+        icon: "success",
+        title: "AI อ่านค่าความดันสำเร็จ",
+        html: `
+          <div class="text-sm font-semibold text-slate-700">SYS: <b class="text-blue-600">${geminiBP.sys}</b> / DIA: <b class="text-blue-600">${geminiBP.dia}</b> mmHg</div>
+          <div class="text-xs text-slate-500 mt-1">ชีพจร: <b>${geminiBP.pulse || '-'}</b> bpm</div>
+          <div class="text-xs text-emerald-600 mt-2">✓ ดึงค่าลงในฟอร์มเรียบร้อย สามารถแก้ไขตัวเลขได้หากต้องการ</div>
+        `,
+        timer: 2500,
+        showConfirmButton: true,
+        confirmButtonText: "รับทราบ",
+        confirmButtonColor: "#2563eb"
+      });
+    } else {
+      evaluateBloodPressure();
+      Swal.fire({
+        icon: "info",
+        title: "บันทึกภาพเครื่องวัดแล้ว",
+        text: "ไม่สามารถตรวจจับตัวเลขได้ชัดเจน กรุณาระบุค่า SYS / DIA / PULSE หรือเลือกปุ่มลัดด้านล่าง",
+        confirmButtonColor: "#2563eb"
+      });
+    }
+  } catch (err) {
+    Swal.close();
+    console.warn("Gemini BP OCR notice:", err);
+    evaluateBloodPressure();
+    Swal.fire({
+      icon: "success",
+      title: "บันทึกภาพเครื่องวัดความดันแล้ว",
+      text: "ท่านสามารถตรวจสอบค่า SYS/DIA/PULSE หรือใช้ปุ่มลัดด้านล่างเพื่อยืนยันผล",
+      timer: 1500,
+      showConfirmButton: false
+    });
+  }
 }
 window.captureBPSnapshot = captureBPSnapshot;
 
@@ -1721,6 +1981,7 @@ function resetBPCameraUI() {
   const imgEl = document.getElementById("bpCapturedImg");
   const scanLine = document.getElementById("bpScanLine");
   const promptEl = document.getElementById("bpCameraPrompt");
+  const reticleEl = document.getElementById("bpReticle");
   const captureBtn = document.getElementById("btnCaptureBP");
   const retakeBtn = document.getElementById("btnRetakeBP");
 
@@ -1731,10 +1992,12 @@ function resetBPCameraUI() {
   }
   if (scanLine) scanLine.classList.add("hidden");
   if (promptEl) promptEl.classList.remove("hidden");
+  if (reticleEl) reticleEl.classList.remove("hidden");
   if (captureBtn) {
     captureBtn.classList.remove("hidden");
-    captureBtn.setAttribute("disabled", "true");
-    captureBtn.className = "flex-1 py-3 px-4 bg-slate-300 text-slate-500 font-bold rounded-xl text-sm transition shadow shutter-btn flex items-center justify-center space-x-2 cursor-not-allowed";
+    captureBtn.removeAttribute("disabled");
+    captureBtn.disabled = false;
+    captureBtn.className = "flex-1 py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-sm transition shadow-lg shutter-btn flex items-center justify-center space-x-2 cursor-pointer active:scale-95";
   }
   if (retakeBtn) retakeBtn.classList.add("hidden");
 }
