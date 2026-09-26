@@ -24,7 +24,19 @@ function saveGasWebAppUrl(url) {
   REG_CONFIG.GAS_WEBAPP_URL = cleanUrl;
 }
 
+function toDirectDriveImageUrl(url) {
+  if (!url) return "";
+  if (url.includes("lh3.googleusercontent.com")) return url;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return `https://lh3.googleusercontent.com/d/${match[1]}`;
+  }
+  return url;
+}
+
 const regState = {
+  isEditMode: false,
+  existingDriver: null,
   masterFaceBase64: null,
   faceDescriptor: null,
   stream: null,
@@ -35,6 +47,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   await verifyAdminAccess();
   initRegistrationEvents();
   loadFaceModels();
+
+  // ตรวจสอบ Parameter จาก URL เช่น ?email=...
+  const urlParams = new URLSearchParams(window.location.search);
+  const emailParam = urlParams.get("email");
+  if (emailParam) {
+    const lookupInput = document.getElementById("lookupDriverInput");
+    if (lookupInput) lookupInput.value = emailParam.trim();
+    await lookupExistingDriver(emailParam.trim());
+  }
 });
 
 /**
@@ -106,12 +127,215 @@ function initRegistrationEvents() {
   const btnCapture = document.getElementById("btnCaptureMaster");
   const btnRetake = document.getElementById("btnRetakeMaster");
   const btnSubmit = document.getElementById("btnSubmitRegistration");
+  const lookupInput = document.getElementById("lookupDriverInput");
+  const btnLookup = document.getElementById("btnLookupDriver");
+  const btnResetMode = document.getElementById("btnResetToNewMode");
 
   if (btnStartCamera) btnStartCamera.addEventListener("click", () => startMasterCamera());
   if (btnCapture) btnCapture.addEventListener("click", () => captureMasterFace());
   if (btnRetake) btnRetake.addEventListener("click", () => retakeMasterFace());
   if (btnSubmit) btnSubmit.addEventListener("click", () => submitRegistration());
+  if (btnLookup) btnLookup.addEventListener("click", () => handleLookupDriverClick());
+  if (btnResetMode) btnResetMode.addEventListener("click", () => resetFormToNewMode());
+
+  if (lookupInput) {
+    lookupInput.addEventListener("keyup", (e) => {
+      if (e.key === "Enter") handleLookupDriverClick();
+    });
+  }
 }
+
+/**
+ * จัดการเมื่อกดปุ่มค้นหาข้อมูลเดิม
+ */
+function handleLookupDriverClick() {
+  const inputEl = document.getElementById("lookupDriverInput");
+  const val = inputEl ? inputEl.value.trim() : "";
+  if (!val) {
+    Swal.fire({
+      icon: "warning",
+      title: "โปรดใส่อีเมลพนักงาน",
+      text: "กรุณาระบุอีเมลพนักงานที่ต้องการดึงข้อมูลมาแก้ไข",
+      confirmButtonColor: "#2563eb"
+    });
+    return;
+  }
+  lookupExistingDriver(val);
+}
+
+/**
+ * ค้นหาข้อมูลพนักงานเดิมจาก Google Sheet
+ */
+async function lookupExistingDriver(searchKey) {
+  if (!searchKey) return;
+  const cleanKey = searchKey.trim().toLowerCase();
+
+  Swal.fire({
+    title: "กำลังค้นหาข้อมูล...",
+    html: `<div class="text-xs text-slate-500">กำลังดึงข้อมูลพนักงานจากฐานข้อมูล Google Sheet...</div>`,
+    allowOutsideClick: false,
+    didOpen: () => { Swal.showLoading(); }
+  });
+
+  try {
+    const gasUrl = getGasWebAppUrl();
+    const res = await fetch(`${gasUrl}?action=checkEmail&email=${encodeURIComponent(cleanKey)}`);
+    const data = await res.json();
+
+    if (data && data.success && data.driver) {
+      applyExistingDriverData(data.driver);
+      Swal.fire({
+        icon: "success",
+        title: "พบข้อมูลพนักงาน!",
+        html: `
+          <div class="text-xs text-slate-600 space-y-1">
+            <p><b>ชื่อ:</b> ${data.driver.driverName || "-"}</p>
+            <p><b>รหัส:</b> ${data.driver.driverId || "-"}</p>
+            <p><b>ทะเบียน:</b> ${data.driver.vehiclePlate || "-"}</p>
+          </div>
+        `,
+        timer: 1800,
+        showConfirmButton: false
+      });
+    } else {
+      Swal.fire({
+        icon: "info",
+        title: "ไม่พบข้อมูลพนักงานเดิม",
+        text: `ไม่พบอีเมล "${searchKey}" ในระบบทะเบียนพนักงาน ท่านสามารถกรอกเพื่อลงทะเบียนใหม่ได้ทันที`,
+        confirmButtonColor: "#2563eb"
+      });
+    }
+  } catch (err) {
+    console.error("Lookup error:", err);
+    Swal.fire({
+      icon: "error",
+      title: "การเชื่อมต่อล้มเหลว",
+      text: err.message || "ไม่สามารถดึงข้อมูลจากระบบได้ โปรดตรวจสอบการเชื่อมต่ออินเทอร์เน็ต",
+      confirmButtonColor: "#2563eb"
+    });
+  }
+}
+
+/**
+ * นำข้อมูลพนักงานเดิมมาแสดงในฟอร์ม และสลับเป็นโหมดแก้ไข
+ */
+function applyExistingDriverData(driver) {
+  if (!driver) return;
+  regState.isEditMode = true;
+  regState.existingDriver = driver;
+
+  // กรอกข้อมูลลงฟอร์ม
+  const driverIdEl = document.getElementById("regDriverId");
+  const driverNameEl = document.getElementById("regDriverName");
+  const emailEl = document.getElementById("regEmail");
+  const phoneEl = document.getElementById("regPhone");
+  const plateEl = document.getElementById("regPlate");
+  const deptEl = document.getElementById("regDept");
+
+  if (driverIdEl) driverIdEl.value = driver.driverId || "";
+  if (driverNameEl) driverNameEl.value = driver.driverName || "";
+  if (emailEl) emailEl.value = driver.email || "";
+  if (phoneEl) phoneEl.value = driver.phone || "";
+  if (plateEl) plateEl.value = driver.vehiclePlate || "";
+  if (deptEl && driver.department) deptEl.value = driver.department;
+
+  // อัปเดต UI Mode Badge
+  const regModeBadge = document.getElementById("regModeBadge");
+  const regModeIcon = document.getElementById("regModeIcon");
+  const regModeText = document.getElementById("regModeText");
+  const btnReset = document.getElementById("btnResetToNewMode");
+  const btnSubmitText = document.getElementById("btnSubmitText");
+  const btnSubmitIcon = document.getElementById("btnSubmitIcon");
+
+  if (regModeBadge) {
+    regModeBadge.classList.remove("bg-blue-100", "text-blue-800", "border-blue-200");
+    regModeBadge.classList.add("bg-amber-100", "text-amber-800", "border-amber-200");
+  }
+  if (regModeIcon) {
+    regModeIcon.className = "fa-solid fa-user-pen text-[10px]";
+  }
+  if (regModeText) {
+    regModeText.textContent = `โหมดแก้ไข: ${driver.driverName || driver.driverId}`;
+  }
+  if (btnReset) btnReset.classList.remove("hidden");
+
+  if (btnSubmitText) btnSubmitText.textContent = "บันทึกการอัปเดตข้อมูลพนักงาน & ใบหน้าใหม่";
+  if (btnSubmitIcon) btnSubmitIcon.className = "fa-solid fa-cloud-arrow-up text-base";
+
+  // แสดงรูปใบหน้าเดิมหากมีในระบบ
+  const existingMasterSec = document.getElementById("existingMasterSection");
+  const existingMasterImg = document.getElementById("existingMasterImg");
+  const masterPhotoUrl = driver.masterFaceUrl || driver.masterFacePhoto || "";
+
+  if (existingMasterSec && existingMasterImg && masterPhotoUrl) {
+    existingMasterImg.src = toDirectDriveImageUrl(masterPhotoUrl);
+    existingMasterSec.classList.remove("hidden");
+  } else if (existingMasterSec) {
+    existingMasterSec.classList.add("hidden");
+  }
+}
+
+/**
+ * ล้างฟอร์มและรีเซ็ตกลับเป็นโหมดลงทะเบียนใหม่
+ */
+function resetFormToNewMode() {
+  regState.isEditMode = false;
+  regState.existingDriver = null;
+  regState.masterFaceBase64 = null;
+  regState.faceDescriptor = null;
+
+  // ล้างค่าใน Input
+  const fields = ["regDriverId", "regDriverName", "regEmail", "regPhone", "regPlate", "lookupDriverInput"];
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  // รีเซ็ต UI
+  const regModeBadge = document.getElementById("regModeBadge");
+  const regModeIcon = document.getElementById("regModeIcon");
+  const regModeText = document.getElementById("regModeText");
+  const btnReset = document.getElementById("btnResetToNewMode");
+  const btnSubmitText = document.getElementById("btnSubmitText");
+  const btnSubmitIcon = document.getElementById("btnSubmitIcon");
+  const existingMasterSec = document.getElementById("existingMasterSection");
+
+  if (regModeBadge) {
+    regModeBadge.classList.remove("bg-amber-100", "text-amber-800", "border-amber-200");
+    regModeBadge.classList.add("bg-blue-100", "text-blue-800", "border-blue-200");
+  }
+  if (regModeIcon) regModeIcon.className = "fa-solid fa-user-plus text-[10px]";
+  if (regModeText) regModeText.textContent = "โหมด: ลงทะเบียนพนักงานใหม่";
+  if (btnReset) btnReset.classList.add("hidden");
+  if (existingMasterSec) existingMasterSec.classList.add("hidden");
+
+  if (btnSubmitText) btnSubmitText.textContent = "บันทึกการลงทะเบียนพนักงาน";
+  if (btnSubmitIcon) btnSubmitIcon.className = "fa-solid fa-user-check text-base";
+
+  // รีเซ็ตกล้อง
+  const videoEl = document.getElementById("masterFaceVideo");
+  const imgEl = document.getElementById("masterFaceImg");
+  const promptEl = document.getElementById("masterCameraPrompt");
+  const captureBtn = document.getElementById("btnCaptureMaster");
+  const retakeBtn = document.getElementById("btnRetakeMaster");
+
+  stopMasterCamera();
+  if (videoEl) videoEl.classList.remove("hidden");
+  if (imgEl) imgEl.classList.add("hidden");
+  if (promptEl) promptEl.classList.remove("hidden");
+  if (retakeBtn) retakeBtn.classList.add("hidden");
+  if (captureBtn) {
+    captureBtn.classList.remove("hidden");
+    captureBtn.disabled = true;
+    captureBtn.classList.add("bg-slate-300", "text-slate-500", "cursor-not-allowed");
+    captureBtn.classList.remove("bg-blue-600", "hover:bg-blue-700", "text-white", "shadow-md", "cursor-pointer");
+  }
+}
+
+window.handleLookupDriverClick = handleLookupDriverClick;
+window.lookupExistingDriver = lookupExistingDriver;
+window.applyExistingDriverData = applyExistingDriverData;
+window.resetFormToNewMode = resetFormToNewMode;
 
 /**
  * เปิดกล้องหน้าสด (รองรับ iOS Safari และ Android 100%)
@@ -321,7 +545,9 @@ async function submitRegistration() {
     return;
   }
 
-  if (!regState.masterFaceBase64) {
+  const hasExistingMaster = !!(regState.existingDriver && (regState.existingDriver.masterFaceUrl || regState.existingDriver.masterFacePhoto));
+
+  if (!regState.masterFaceBase64 && !hasExistingMaster) {
     Swal.fire({
       icon: "warning",
       title: "ยังไม่ได้ถ่ายภาพใบหน้าต้นแบบ",
@@ -331,9 +557,12 @@ async function submitRegistration() {
     return;
   }
 
+  const isEdit = regState.isEditMode;
+  const isPhotoUpdated = !!regState.masterFaceBase64;
+
   Swal.fire({
-    title: "กำลังบันทึกข้อมูล...",
-    html: `<div class="text-xs text-slate-500">กำลังอัปโหลดใบหน้าต้นแบบไปยัง Google Drive และบันทึกข้อมูลพนักงาน...</div>`,
+    title: isEdit ? "กำลังบันทึกการอัปเดต..." : "กำลังบันทึกข้อมูล...",
+    html: `<div class="text-xs text-slate-500">${isPhotoUpdated ? "กำลังอัปโหลดใบหน้าต้นแบบใหม่ไปยัง Google Drive และอัปเดตข้อมูล..." : "กำลังบันทึกข้อมูลพนักงานลงฐานข้อมูล Google Sheet..."}</div>`,
     allowOutsideClick: false,
     didOpen: () => {
       Swal.showLoading();
@@ -348,13 +577,13 @@ async function submitRegistration() {
     phone: phone,
     vehiclePlate: plate,
     department: dept,
-    masterFaceImageBase64: regState.masterFaceBase64,
-    faceDescriptorJson: JSON.stringify(regState.faceDescriptor || [])
+    masterFaceImageBase64: regState.masterFaceBase64 || "",
+    faceDescriptorJson: regState.faceDescriptor ? JSON.stringify(regState.faceDescriptor) : ""
   };
 
   try {
     let success = false;
-    let message = "ลงทะเบียนพนักงานและบันทึกใบหน้าต้นแบบเรียบร้อย";
+    let message = isEdit ? "อัปเดตข้อมูลพนักงานเรียบร้อยแล้ว" : "ลงทะเบียนพนักงานและบันทึกใบหน้าต้นแบบเรียบร้อย";
     let masterUrl = "";
 
     let targetGasUrl = getGasWebAppUrl();
@@ -408,6 +637,7 @@ async function submitRegistration() {
 
     if (success) {
       // บันทึกลงใน LocalStorage เพื่อให้หน้าตรวจวัด Auto-Login ใช้งานได้ทันที
+      const existingLocal = JSON.parse(localStorage.getItem("TTMK_DRIVER_PROFILE") || "{}");
       const localDriverData = {
         driverId: driverId,
         driverName: driverName,
@@ -415,18 +645,18 @@ async function submitRegistration() {
         phone: phone,
         vehiclePlate: plate,
         department: dept,
-        masterFacePhoto: regState.masterFaceBase64,
-        masterFaceDescriptor: regState.faceDescriptor,
-        masterFaceUrl: masterUrl
+        masterFacePhoto: regState.masterFaceBase64 || (regState.existingDriver ? (regState.existingDriver.masterFacePhoto || regState.existingDriver.masterFaceUrl) : "") || existingLocal.masterFacePhoto || "",
+        masterFaceDescriptor: regState.faceDescriptor || (regState.existingDriver ? regState.existingDriver.faceDescriptor : null) || existingLocal.masterFaceDescriptor || null,
+        masterFaceUrl: masterUrl || (regState.existingDriver ? regState.existingDriver.masterFaceUrl : "") || existingLocal.masterFaceUrl || ""
       };
       localStorage.setItem("TTMK_DRIVER_PROFILE", JSON.stringify(localDriverData));
 
       Swal.fire({
         icon: "success",
-        title: "ลงทะเบียนสำเร็จ!",
+        title: isEdit ? "อัปเดตข้อมูลพนักงานสำเร็จ!" : "ลงทะเบียนสำเร็จ!",
         html: `
           <p class="text-xs text-slate-600 mb-2">${message}</p>
-          <p class="text-xs text-emerald-600 font-bold">ระบบจำข้อมูลบนมือถือเครื่องนี้เรียบร้อยแล้ว พร้อมตรวจวัดแอลกอฮอล์ได้ทันที</p>
+          <p class="text-xs text-emerald-600 font-bold">${isEdit ? "บันทึกการแก้ไขข้อมูลและใบหน้าใหม่เรียบร้อยแล้ว" : "ระบบจำข้อมูลบนมือถือเครื่องนี้เรียบร้อยแล้ว พร้อมตรวจวัดแอลกอฮอล์ได้ทันที"}</p>
         `,
         confirmButtonColor: "#2563eb",
         confirmButtonText: "ไปยังหน้าตรวจวัดแอลกอฮอล์ทันที"
