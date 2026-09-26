@@ -41,6 +41,68 @@
 
   <!-- Custom CSS -->
   <link rel="stylesheet" href="style.css">
+
+  <script>
+    // Early global declaration to guarantee availability on button click
+    window.editCurrentDriverProfile = async function() {
+      let email = "";
+      try {
+        if (window.appState && window.appState.driver) {
+          email = window.appState.driver.email || "";
+        }
+        if (!email) {
+          const saved = localStorage.getItem("TTMK_DRIVER_PROFILE");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            email = parsed.email || "";
+          }
+        }
+        if (!email) {
+          email = localStorage.getItem("TTMK_LAST_EMAIL") || "";
+        }
+      } catch (e) {}
+
+      const currentAuth = sessionStorage.getItem("TTMK_ADMIN_AUTH");
+      if (currentAuth === "44Cone38") {
+        window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+        return;
+      }
+
+      if (window.Swal) {
+        const { value: passcode } = await Swal.fire({
+          title: "ระบบความปลอดภัยเจ้าหน้าที่",
+          html: `<div class="text-xs text-slate-500 mb-2">กรุณาใส่รหัสผ่านเจ้าหน้าที่เพื่อเข้าสู่หน้าแก้ไขข้อมูล / ถ่ายรูปต้นแบบใหม่</div>`,
+          input: "password",
+          inputPlaceholder: "กรุณาใส่รหัสผ่าน",
+          showCancelButton: true,
+          confirmButtonText: "เข้าสู่หน้าแก้ไข",
+          cancelButtonText: "ยกเลิก",
+          confirmButtonColor: "#2563eb",
+          cancelButtonColor: "#64748b"
+        });
+
+        if (passcode === "44Cone38") {
+          sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+          window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+        } else if (passcode) {
+          Swal.fire({
+            icon: "error",
+            title: "รหัสผ่านไม่ถูกต้อง!",
+            text: "ไม่อนุญาตให้แก้ไขข้อมูลพนักงาน กรุณาติดต่อผู้ดูแลระบบ",
+            confirmButtonColor: "#dc2626"
+          });
+        }
+      } else {
+        const pass = prompt("กรุณาใส่รหัสผ่านเจ้าหน้าที่เพื่อเข้าสู่หน้าแก้ไขข้อมูล (Passcode: 44Cone38):");
+        if (pass === "44Cone38") {
+          sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+          window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+        } else if (pass) {
+          alert("รหัสผ่านไม่ถูกต้อง!");
+        }
+      }
+    };
+  </script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col justify-between selection:bg-brand-500 selection:text-white">
 
@@ -713,6 +775,6 @@
   </footer>
 
   <!-- App Script Logic -->
-  <script src="app.js"></script>
+  <script src="app.js?v=20260926_02"></script>
 </body>
 </html>
