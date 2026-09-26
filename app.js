@@ -153,6 +153,56 @@ window.promptAdminRegisterPasscode = async function() {
   }
 };
 
+// ฟังก์ชันเข้าสู่หน้าแก้ไขข้อมูลพนักงานหรือถ่ายรูปหน้าต้นแบบใหม่
+window.editCurrentDriverProfile = async function() {
+  let email = "";
+  try {
+    if (window.appState && window.appState.driver) {
+      email = window.appState.driver.email || "";
+    }
+    if (!email) {
+      const saved = localStorage.getItem("TTMK_DRIVER_PROFILE");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        email = parsed.email || "";
+      }
+    }
+    if (!email) {
+      email = localStorage.getItem("TTMK_LAST_EMAIL") || "";
+    }
+  } catch (e) {}
+
+  const currentAuth = sessionStorage.getItem("TTMK_ADMIN_AUTH");
+  if (currentAuth === "44Cone38") {
+    window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+    return;
+  }
+
+  const { value: passcode } = await Swal.fire({
+    title: "ระบบความปลอดภัยเจ้าหน้าที่",
+    html: `<div class="text-xs text-slate-500 mb-2">กรุณาใส่รหัสผ่านเจ้าหน้าที่เพื่อเข้าสู่หน้าแก้ไขข้อมูล / ถ่ายรูปต้นแบบใหม่</div>`,
+    input: "password",
+    inputPlaceholder: "กรุณาใส่รหัสผ่าน",
+    showCancelButton: true,
+    confirmButtonText: "เข้าสู่หน้าแก้ไข",
+    cancelButtonText: "ยกเลิก",
+    confirmButtonColor: "#2563eb",
+    cancelButtonColor: "#64748b"
+  });
+
+  if (passcode === "44Cone38") {
+    sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+    window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+  } else if (passcode) {
+    Swal.fire({
+      icon: "error",
+      title: "รหัสผ่านไม่ถูกต้อง!",
+      text: "ไม่อนุญาตให้แก้ไขข้อมูลพนักงาน กรุณาติดต่อผู้ดูแลระบบ",
+      confirmButtonColor: "#dc2626"
+    });
+  }
+};
+
 // หน้าต่างตั้งค่า Google Apps Script Web App URL
 async function openGasSettingsModal() {
   const currentUrl = getGasWebAppUrl();
