@@ -63,25 +63,87 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 260px;
-  height: 140px;
-  border: 3px solid #3b82f6;
-  border-radius: 12px;
-  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.55);
+  width: 270px;
+  height: 150px;
+  max-width: 82%;
+  border: 2px solid #38bdf8;
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.60);
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+}
+
+/* Blood Pressure Monitor Guide Box (Square / Portrait) */
+.bp-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 260px;
+  height: 240px;
+  max-width: 82%;
+  border: 2px solid #38bdf8;
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.60);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
 }
 
 .meter-guide-corner {
   position: absolute;
-  width: 20px;
-  height: 20px;
-  border-color: #60a5fa;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
 }
 
-.corner-tl { top: -2px; left: -2px; border-top: 4px solid #3b82f6; border-left: 4px solid #3b82f6; }
-.corner-tr { top: -2px; right: -2px; border-top: 4px solid #3b82f6; border-right: 4px solid #3b82f6; }
-.corner-bl { bottom: -2px; left: -2px; border-bottom: 4px solid #3b82f6; border-left: 4px solid #3b82f6; }
-.corner-br { bottom: -2px; right: -2px; border-bottom: 4px solid #3b82f6; border-right: 4px solid #3b82f6; }
+.corner-tl { top: -2px; left: -2px; border-top: 4px solid #38bdf8; border-left: 4px solid #38bdf8; border-top-left-radius: 8px; }
+.corner-tr { top: -2px; right: -2px; border-top: 4px solid #38bdf8; border-right: 4px solid #38bdf8; border-top-right-radius: 8px; }
+.corner-bl { bottom: -2px; left: -2px; border-bottom: 4px solid #38bdf8; border-left: 4px solid #38bdf8; border-bottom-left-radius: 8px; }
+.corner-br { bottom: -2px; right: -2px; border-bottom: 4px solid #38bdf8; border-right: 4px solid #38bdf8; border-bottom-right-radius: 8px; }
+
+/* Horizon Level Alignment Line (Anti-tilt) */
+.guide-horizon-line {
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  border-top: 1px dashed rgba(56, 189, 248, 0.45);
+  pointer-events: none;
+}
+.guide-horizon-line::after {
+  content: "+";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #38bdf8;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* Guide Text Label */
+.guide-pill-badge {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  color: #e0f2fe;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
 
 /* Laser Scanner Animation */
 .laser-scan-line {
