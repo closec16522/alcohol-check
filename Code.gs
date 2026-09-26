@@ -13,26 +13,15 @@ var DRIVE_FOLDER_ID = "1tfKH6EOBFdG0c4Wm2MPO-R61NP5mAc0c";
 
 var SHEET_LOGS = "Alcohol_Logs";
 var SHEET_DRIVERS = "Registered_Drivers";
+var SHEET_CONFIG = "System_Config"; // แผ่นเก็บคีย์ลับและค่าคอนฟิกทั้งหมด (Gemini Key, LINE, Telegram) ไม่เปิดเผยบน GitHub
 
-// =========================================================================
-// การตั้งค่าแจ้งเตือนหลังบ้าน (LINE & Telegram Notifications)
-// =========================================================================
+// ค่า Default เบื้องต้น (จะถูก Override อัตโนมัติด้วยค่าจากแผ่น System_Config ใน Google Sheet)
 var NOTIFICATION_CONFIG = {
-  // 1. Telegram Alert (แนะนำ - เสถียรและส่งรูปภาพเข้ากลุ่มได้ทันที)
-  // วิธีสร้าง: ทัก @BotFather ใน Telegram แล้วพิมพ์ /newbot จะได้ TOKEN
-  // จากนั้นดึง Chat ID ของกลุ่มหรือตนเองมาใส่
-  TELEGRAM_BOT_TOKEN: "", // ใส่ Telegram Bot Token เช่น "7123456789:AAH..."
-  TELEGRAM_CHAT_ID: "",   // ใส่ Chat ID เช่น "-1001234567890" หรือ "123456789"
-
-  // 2. LINE Messaging API (Official modern LINE Bot)
-  // Channel Access Token จาก LINE Developers Console
-  LINE_CHANNEL_ACCESS_TOKEN: "", // ใส่ Channel Access Token
-  LINE_TARGET_ID: "",           // ใส่ User ID หรือ Group ID (เช่น U123... หรือ C123...)
-
-  // 3. LINE Notify (เดิม - ใช้ได้ถึง 31 มี.ค. 2025)
-  LINE_NOTIFY_TOKEN: "", // ใส่ LINE Notify Token
-
-  // แจ้งเตือนเฉพาะกรณีไม่ผ่าน หรือความดันสูง (true) หรือแจ้งทุกรายการ (false)
+  TELEGRAM_BOT_TOKEN: "",
+  TELEGRAM_CHAT_ID: "",
+  LINE_CHANNEL_ACCESS_TOKEN: "",
+  LINE_TARGET_ID: "",
+  LINE_NOTIFY_TOKEN: "",
   ALERT_ON_FAIL_ONLY: false
 };
 
@@ -97,8 +86,153 @@ function initialSetup() {
   ];
   
   ensureColumnsMatch(driverSheet, driverHeaders, "#065F46");
+
+  // 3. ชีต System_Config (เก็บ Key ลับ ทั้งหมด เช่น Gemini, Line, Telegram ไม่ให้อยู่บน GitHub)
+  var configSheet = ss.getSheetByName(SHEET_CONFIG);
+  if (!configSheet) {
+    configSheet = ss.insertSheet(SHEET_CONFIG);
+  }
+  var configHeaders = ["Config_Key", "Config_Value", "Description", "Last_Updated"];
+  ensureColumnsMatch(configSheet, configHeaders, "#4C1D95");
+  initDefaultSystemConfigs(configSheet);
   
   return "Setup & Column Migration Completed Successfully";
+}
+
+/**
+ * สร้างค่าเริ่มต้นในตาราง System_Config หากยังไม่มี
+ */
+function initDefaultSystemConfigs(configSheet) {
+  var data = configSheet.getDataRange().getValues();
+  var existingKeys = {};
+  for (var i = 1; i < data.length; i++) {
+    var k = (data[i][0] || "").toString().trim();
+    if (k) existingKeys[k] = true;
+  }
+  
+  var defaults = [
+    ["GEMINI_API_KEY", "", "Google Gemini Vision API Key (ระบุคีย์ลับของคุณในช่องนี้ เพื่อเปิดใช้งาน AI)"],
+    ["GEMINI_MODEL", "gemini-2.5-flash", "โมเดล Gemini สำหรับประมวลผลรูปภาพ"],
+    ["ADMIN_PASSCODE", "44Cone38", "รหัสผ่านเจ้าหน้าที่สำหรับลงทะเบียนและตั้งค่า"],
+    ["TELEGRAM_BOT_TOKEN", "", "Telegram Bot Token สำหรับส่งการ์ดรายงาน"],
+    ["TELEGRAM_CHAT_ID", "", "Telegram Chat ID ของกลุ่ม"],
+    ["LINE_CHANNEL_ACCESS_TOKEN", "", "LINE Messaging API Channel Access Token"],
+    ["LINE_TARGET_ID", "", "LINE User ID หรือ Group ID สำหรับรับรายงาน"],
+    ["LINE_NOTIFY_TOKEN", "", "LINE Notify Token (เดิม)"],
+    ["ALERT_ON_FAIL_ONLY", "false", "แจ้งเตือนเฉพาะเคสไม่ผ่านเท่านั้น (true/false)"]
+  ];
+  
+  var nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss");
+  defaults.forEach(function(row) {
+    if (!existingKeys[row[0]]) {
+      configSheet.appendRow([row[0], row[1], row[2], nowStr]);
+    }
+  });
+}
+
+/**
+ * ดึงค่า Config จากชีต System_Config (พร้อมระบบ Cache 5 นาทีเพื่อความรวดเร็ว)
+ */
+function getSystemConfig(key, defaultValue) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get("CFG_" + key);
+    if (cached !== null) return cached;
+    
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName(SHEET_CONFIG);
+    if (!sheet) {
+      initialSetup();
+      sheet = ss.getSheetByName(SHEET_CONFIG);
+    }
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0].toString().trim() === key) {
+        var val = data[i][1] !== undefined ? data[i][1].toString().trim() : "";
+        cache.put("CFG_" + key, val, 300); // แคช 5 นาที
+        return val || (defaultValue || "");
+      }
+    }
+  } catch (e) {
+    Logger.log("getSystemConfig error: " + e.message);
+  }
+  return defaultValue || "";
+}
+
+/**
+ * Google Gemini 2.5 Flash Vision AI Proxy (Secure Gateway)
+ * ทำงานฝั่ง Google Apps Script โดยใช้ API Key ที่ซ่อนอยู่ใน Google Sheet อย่างปลอดภัย 100%
+ */
+function callGeminiFromGas(params) {
+  var apiKey = getSystemConfig("GEMINI_API_KEY", "");
+  if (!apiKey || apiKey.length < 10) {
+    throw new Error("ไม่พบ GEMINI_API_KEY ในชีต System_Config");
+  }
+  
+  var model = getSystemConfig("GEMINI_MODEL", "gemini-2.5-flash");
+  var endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+  
+  var parts = [];
+  if (params.prompt) {
+    parts.push({ text: params.prompt });
+  }
+  
+  if (params.imageBase64) {
+    var clean1 = params.imageBase64.indexOf(",") > -1 ? params.imageBase64.split(",")[1] : params.imageBase64;
+    parts.push({
+      inline_data: {
+        mime_type: "image/jpeg",
+        data: clean1
+      }
+    });
+  }
+  
+  if (params.image2Base64) {
+    var clean2 = params.image2Base64.indexOf(",") > -1 ? params.image2Base64.split(",")[1] : params.image2Base64;
+    parts.push({
+      inline_data: {
+        mime_type: "image/jpeg",
+        data: clean2
+      }
+    });
+  }
+  
+  var payload = {
+    contents: [{ parts: parts }],
+    generationConfig: {
+      response_mime_type: "application/json",
+      temperature: 0.1
+    }
+  };
+  
+  if (params.systemInstruction) {
+    payload.systemInstruction = {
+      parts: [{ text: params.systemInstruction }]
+    };
+  }
+  
+  var options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  var response = UrlFetchApp.fetch(endpoint, options);
+  var code = response.getResponseCode();
+  var text = response.getContentText();
+  
+  if (code !== 200) {
+    throw new Error("Gemini API Error (" + code + "): " + text.slice(0, 200));
+  }
+  
+  var json = JSON.parse(text);
+  var candidateText = json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts && json.candidates[0].content.parts[0].text;
+  if (!candidateText) {
+    throw new Error("Gemini AI ไม่ได้ส่งผลลัพธ์ข้อความกลับมา");
+  }
+  
+  return JSON.parse(candidateText);
 }
 
 /**
@@ -291,6 +425,17 @@ function doPost(e) {
     var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     var now = new Date();
     
+    // -------------------------------------------------------------
+    // ACTION 0: Gemini AI Vision Proxy (API Gateway ซ่อนคีย์ลับจาก GitHub)
+    // -------------------------------------------------------------
+    if (action === "geminiProxy") {
+      var geminiResult = callGeminiFromGas(payload);
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        data: geminiResult
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     // -------------------------------------------------------------
     // ACTION 1: ลงทะเบียนพนักงานใหม่ / อัปเดตรูปหน้าต้นแบบ (Register Master Face)
     // -------------------------------------------------------------
@@ -493,8 +638,9 @@ function doPost(e) {
                     "⏰ เวลา: " + fullTimestamp + "\n" +
                     (reportPhotoUrl !== "-" ? "🖼️ รูปรายงาน: " + reportPhotoUrl : "");
 
+    var alertOnFailOnly = (getSystemConfig("ALERT_ON_FAIL_ONLY", "false") === "true");
     var isUrgentAlert = (overallStatus !== "ผ่านพร้อมปฏิบัติงาน");
-    if (!NOTIFICATION_CONFIG.ALERT_ON_FAIL_ONLY || isUrgentAlert) {
+    if (!alertOnFailOnly || isUrgentAlert) {
       try {
         sendTelegramAlert(alertText, reportPhotoUrl !== "-" ? reportPhotoUrl : null);
       } catch (tgErr) {
@@ -539,8 +685,8 @@ function doPost(e) {
  * ส่งข้อความแจ้งเตือนผ่าน Telegram Bot
  */
 function sendTelegramAlert(message, photoUrl) {
-  var botToken = NOTIFICATION_CONFIG.TELEGRAM_BOT_TOKEN;
-  var chatId = NOTIFICATION_CONFIG.TELEGRAM_CHAT_ID;
+  var botToken = getSystemConfig("TELEGRAM_BOT_TOKEN", NOTIFICATION_CONFIG.TELEGRAM_BOT_TOKEN);
+  var chatId = getSystemConfig("TELEGRAM_CHAT_ID", NOTIFICATION_CONFIG.TELEGRAM_CHAT_ID);
   if (!botToken || !chatId) return;
 
   var url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
@@ -562,18 +708,22 @@ function sendTelegramAlert(message, photoUrl) {
  * ส่งข้อความแจ้งเตือนผ่าน LINE Messaging API หรือ LINE Notify
  */
 function sendLineAlert(message) {
+  var lineChannelToken = getSystemConfig("LINE_CHANNEL_ACCESS_TOKEN", NOTIFICATION_CONFIG.LINE_CHANNEL_ACCESS_TOKEN);
+  var lineTargetId = getSystemConfig("LINE_TARGET_ID", NOTIFICATION_CONFIG.LINE_TARGET_ID);
+  var lineNotifyToken = getSystemConfig("LINE_NOTIFY_TOKEN", NOTIFICATION_CONFIG.LINE_NOTIFY_TOKEN);
+
   // 1. LINE Messaging API
-  if (NOTIFICATION_CONFIG.LINE_CHANNEL_ACCESS_TOKEN && NOTIFICATION_CONFIG.LINE_TARGET_ID) {
+  if (lineChannelToken && lineTargetId) {
     var pushUrl = "https://api.line.me/v2/bot/message/push";
     var pushPayload = {
-      to: NOTIFICATION_CONFIG.LINE_TARGET_ID,
+      to: lineTargetId,
       messages: [{ type: "text", text: message }]
     };
     UrlFetchApp.fetch(pushUrl, {
       method: "post",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + NOTIFICATION_CONFIG.LINE_CHANNEL_ACCESS_TOKEN
+        "Authorization": "Bearer " + lineChannelToken
       },
       payload: JSON.stringify(pushPayload),
       muteHttpExceptions: true
@@ -582,12 +732,12 @@ function sendLineAlert(message) {
   }
 
   // 2. LINE Notify (Fallback)
-  if (NOTIFICATION_CONFIG.LINE_NOTIFY_TOKEN) {
+  if (lineNotifyToken) {
     var notifyUrl = "https://notify-api.line.me/api/notify";
     UrlFetchApp.fetch(notifyUrl, {
       method: "post",
       headers: {
-        "Authorization": "Bearer " + NOTIFICATION_CONFIG.LINE_NOTIFY_TOKEN
+        "Authorization": "Bearer " + lineNotifyToken
       },
       payload: { message: message },
       muteHttpExceptions: true
