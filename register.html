@@ -71,6 +71,35 @@
       </div>
     </div>
 
+    <!-- Search / Switch Mode Bar -->
+    <div class="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-200 space-y-2.5">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span id="regModeBadge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center space-x-1.5">
+            <i id="regModeIcon" class="fa-solid fa-user-plus text-[10px]"></i>
+            <span id="regModeText">โหมด: ลงทะเบียนพนักงานใหม่</span>
+          </span>
+        </div>
+        <button type="button" id="btnResetToNewMode" onclick="resetFormToNewMode()" class="hidden text-xs text-slate-500 hover:text-slate-800 font-medium underline cursor-pointer">
+          <i class="fa-solid fa-arrows-rotate mr-1"></i> ล้างฟอร์ม / สลับเป็นลงทะเบียนใหม่
+        </button>
+      </div>
+
+      <!-- Quick Lookup Form -->
+      <div class="flex gap-2">
+        <div class="relative flex-1">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
+          <input type="text" id="lookupDriverInput" placeholder="ใส่อีเมลพนักงาน เพื่อดึงข้อมูลเดิมมาแก้ไขหรือถ่ายรูปใหม่"
+                 class="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <button type="button" id="btnLookupDriver" onclick="handleLookupDriverClick()"
+                class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white text-xs font-semibold rounded-xl transition shadow flex items-center space-x-1.5 cursor-pointer">
+          <i class="fa-solid fa-search text-[11px]"></i>
+          <span>ดึงข้อมูลเดิม</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Registration Card -->
     <section class="glass-panel p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
 
@@ -125,6 +154,24 @@
         </label>
         <p class="text-[11px] text-slate-500 mb-3">กรุณามองตรงหน้ากล้อง ไม่สวมหมวก แว่นตาดำ หรือหน้ากากอนามัย</p>
 
+        <!-- Existing Master Face Preview (Shown in Edit Mode) -->
+        <div id="existingMasterSection" class="hidden mb-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-amber-900 flex items-center">
+              <i class="fa-solid fa-id-badge mr-1.5 text-amber-600"></i> รูปใบหน้าต้นแบบปัจจุบันในระบบ
+            </span>
+            <span class="text-[10px] px-2 py-0.5 rounded-md bg-amber-200/70 text-amber-800 font-semibold">มีรูปในระบบแล้ว</span>
+          </div>
+          <div class="flex items-center space-x-3">
+            <img id="existingMasterImg" src="" alt="Current Master Face" class="w-16 h-20 object-cover rounded-lg border border-amber-300 shadow-sm bg-slate-800">
+            <div class="text-[11px] text-slate-600 flex-1 space-y-1">
+              <p class="font-medium text-slate-800">มีรูปต้นแบบเดิมอยู่ในระบบแล้ว</p>
+              <p class="text-slate-500">หากต้องการแก้ไขเฉพาะข้อมูลชื่อ/เบอร์โทร/ทะเบียนรถ สามารถกดบันทึกได้ทันทีโดยไม่ต้องถ่ายรูปใหม่</p>
+              <p class="text-blue-700 font-semibold">หรือหากต้องการอัปเดตใบหน้าใหม่ ให้กดปุ่ม "เปิดกล้องหน้าสด" ด้านล่าง</p>
+            </div>
+          </div>
+        </div>
+
         <div class="relative w-full aspect-[3/4] max-w-xs mx-auto bg-slate-900 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-300">
           <video id="masterFaceVideo" autoplay playsinline muted class="w-full h-full object-cover camera-mirror"></video>
           <img id="masterFaceImg" class="w-full h-full object-cover hidden" alt="Master Face Preview">
@@ -169,8 +216,8 @@
       <div class="pt-3 border-t border-slate-200">
         <button type="button" id="btnSubmitRegistration" onclick="submitRegistration()"
                 class="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold rounded-xl text-sm transition shadow-lg flex items-center justify-center space-x-2 cursor-pointer active:scale-95">
-          <i class="fa-solid fa-user-check text-base"></i>
-          <span>บันทึกการลงทะเบียนพนักงาน</span>
+          <i id="btnSubmitIcon" class="fa-solid fa-user-check text-base"></i>
+          <span id="btnSubmitText">บันทึกการลงทะเบียนพนักงาน</span>
         </button>
       </div>
 
