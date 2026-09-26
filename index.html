@@ -40,7 +40,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260926_03">
 
   <script>
     // Early global declaration to guarantee availability on button click
@@ -405,15 +405,15 @@
           <video id="meterVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
           <img id="meterCapturedImg" class="w-full h-full object-cover hidden" alt="Captured Meter">
           
-          <!-- Meter Digit Target Reticle -->
+          <!-- Meter Digit Target Reticle (Enhanced with Horizon Guide) -->
           <div id="meterReticle" class="meter-guide">
             <div class="meter-guide-corner corner-tl"></div>
             <div class="meter-guide-corner corner-tr"></div>
             <div class="meter-guide-corner corner-bl"></div>
             <div class="meter-guide-corner corner-br"></div>
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span class="text-[10px] text-blue-300/80 bg-slate-900/60 px-2 py-0.5 rounded font-mono">เล็งตัวเลขในกรอบนี้</span>
-            </div>
+            <div class="guide-horizon-line"></div>
+            <div class="guide-pill-badge">วางจอตัวเลขตรงกรอบ (ถือเครื่องไม่เอียง)</div>
+            <div class="text-[9px] text-cyan-200/90 font-mono tracking-wider"><i class="fa-solid fa-sparkles mr-1"></i>Google Gemini AI Auto-OCR</div>
           </div>
 
           <div id="meterScanLine" class="laser-scan-line hidden"></div>
@@ -542,11 +542,19 @@
           <video id="bpVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
           <img id="bpCapturedImg" class="w-full h-full object-cover hidden" alt="Captured BP Monitor">
 
-          <div id="bpReticle" class="meter-guide">
+          <!-- BP Monitor Target Reticle (Enhanced with 3-Row Guide & Horizon Line) -->
+          <div id="bpReticle" class="bp-guide">
             <span class="meter-guide-corner corner-tl"></span>
             <span class="meter-guide-corner corner-tr"></span>
             <span class="meter-guide-corner corner-bl"></span>
             <span class="meter-guide-corner corner-br"></span>
+            <div class="guide-horizon-line"></div>
+            <div class="guide-pill-badge">วางจอ SYS / DIA / PULSE ในกรอบ</div>
+            <div class="w-full px-3 text-[9px] text-cyan-200/90 flex justify-between font-mono">
+              <span>▲ SYS (บน)</span>
+              <span>● DIA (กลาง)</span>
+              <span>▼ PULSE (ล่าง)</span>
+            </div>
           </div>
 
           <div id="bpScanLine" class="laser-scan-line hidden"></div>
@@ -775,6 +783,6 @@
   </footer>
 
   <!-- App Script Logic -->
-  <script src="app.js?v=20260926_02"></script>
+  <script src="app.js?v=20260926_03"></script>
 </body>
 </html>
