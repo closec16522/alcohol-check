@@ -207,40 +207,63 @@ async function captureMasterFace() {
 
   extractingEl.classList.remove("hidden");
 
-  // วิเคราะห์ใบหน้าด้วย Face-API (ถ้ามี) หรือคำนวณ Landmark vector
+  // วิเคราะห์ใบหน้าด้วย Face-API สกัดเวกเตอร์ 128 มิติ (128-d Vector)
   try {
+    if (!regState.modelsLoaded && window.faceapi) {
+      await loadFaceModels();
+    }
+
     let descriptor = null;
     if (window.faceapi && regState.modelsLoaded) {
-      const detection = await faceapi.detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions())
-                                    .withFaceLandmarks()
-                                    .withFaceDescriptor();
+      let detection = await faceapi.detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.25 }))
+                                   .withFaceLandmarks()
+                                   .withFaceDescriptor();
+      if (!detection) {
+        detection = await faceapi.detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+                                 .withFaceLandmarks()
+                                 .withFaceDescriptor();
+      }
       if (detection && detection.descriptor) {
         descriptor = Array.from(detection.descriptor);
       }
     }
-    
-    // ถ้าไม่มี faceapi หรือสกัดไม่ได้ สร้าง fallback facial fingerprint จากตารางพิกเซล
-    if (!descriptor) {
-      descriptor = generateFallbackFacialVector(ctx, canvas.width, canvas.height);
+
+    if (!descriptor || descriptor.length !== 128) {
+      extractingEl.classList.add("hidden");
+      Swal.fire({
+        icon: "warning",
+        title: "ตรวจไม่พบใบหน้าในภาพถ่าย",
+        text: "กรุณามองตรงหน้ากล้องให้อยู่กึ่งกลางกรอบวงรี ถอดหมวก/แว่นตา และอยู่ในที่สว่าง แล้วกดถ่ายใหม่อีกครั้ง",
+        confirmButtonColor: "#2563eb",
+        confirmButtonText: "ถ่ายใหม่"
+      }).then(() => {
+        retakeMasterFace();
+      });
+      return;
     }
 
     regState.faceDescriptor = descriptor;
-  } catch (err) {
-    console.warn("Face analysis fallback:", err);
-    regState.faceDescriptor = generateFallbackFacialVector(ctx, canvas.width, canvas.height);
-  } finally {
     extractingEl.classList.add("hidden");
     retakeBtn.classList.remove("hidden");
     captureBtn.classList.add("hidden");
-  }
 
-  Swal.fire({
-    icon: "success",
-    title: "บันทึกภาพใบหน้าสำเร็จ",
-    text: "AI วิเคราะห์โครงสร้างใบหน้าต้นแบบเรียบร้อยแล้ว",
-    timer: 1400,
-    showConfirmButton: false
-  });
+    Swal.fire({
+      icon: "success",
+      title: "บันทึกภาพใบหน้าสำเร็จ",
+      text: "AI วิเคราะห์และสกัดเวกเตอร์ใบหน้า 128 มิติ (128-d Vector) เรียบร้อยแล้ว",
+      timer: 1500,
+      showConfirmButton: false
+    });
+  } catch (err) {
+    console.error("Face capture analysis error:", err);
+    extractingEl.classList.add("hidden");
+    Swal.fire({
+      icon: "error",
+      title: "เกิดข้อผิดพลาดในการวิเคราะห์ใบหน้า",
+      text: err.message || "ไม่สามารถวิเคราะห์จุดเด่นใบหน้าได้ กรุณาลองใหม่อีกครั้ง",
+      confirmButtonColor: "#2563eb"
+    });
+  }
 }
 
 function retakeMasterFace() {
