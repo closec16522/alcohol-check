@@ -413,22 +413,40 @@ function getAllDrivers() {
  * จัดการคำขอแบบ POST (ลงทะเบียนพนักงาน & บันทึกผลตรวจวัดแอลกอฮอล์ + ความดัน)
  */
 function doPost(e) {
+  // -------------------------------------------------------------
+  // 1. FAST RESPONSE: LINE Webhook Verify ทันที (ป้องกัน Timeout ภายใน 0.05 วินาที)
+  // -------------------------------------------------------------
+  if (e && e.postData && e.postData.contents) {
+    try {
+      var rawCheck = e.postData.contents;
+      if (rawCheck.indexOf('"events"') > -1) {
+        var linePayload = JSON.parse(rawCheck);
+        if (linePayload.events && Array.isArray(linePayload.events)) {
+          // หากเป็นการกดปุ่ม Verify จาก LINE Developers (events ว่างเปล่า []) ตอบกลับทันที 100%!
+          if (linePayload.events.length === 0) {
+            return ContentService.createTextOutput(JSON.stringify({ status: "ok" }))
+              .setMimeType(ContentService.MimeType.JSON);
+          }
+          // หากมีอีเวนต์จริง (เช่น แอดมินดึงบอทเข้ากลุ่ม หรือพิมพ์ขอ ID)
+          handleLineWebhookEvents(linePayload.events);
+          return ContentService.createTextOutput(JSON.stringify({ status: "ok" }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    } catch (lineFastErr) {
+      Logger.log("Fast Line Webhook error: " + lineFastErr.toString());
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 2. ปฏิบัติการปกติ: บันทึกข้อมูลและประมวลผล AI
+  // -------------------------------------------------------------
   var lock = LockService.getScriptLock();
   lock.tryLock(30000);
   
   try {
     var rawData = e.postData.contents;
     var payload = JSON.parse(rawData);
-
-    // -------------------------------------------------------------
-    // LINE Webhook Verification & Events (ปุ่ม Verify & ค้นหา Group ID อัตโนมัติ)
-    // -------------------------------------------------------------
-    if (payload.events && Array.isArray(payload.events)) {
-      handleLineWebhookEvents(payload.events);
-      return ContentService.createTextOutput(JSON.stringify({ status: "ok" }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
     var action = payload.action || "submitAlcoholTest";
     
     var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
