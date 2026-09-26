@@ -8,8 +8,28 @@
  * =========================================================================
  */
 
-var SPREADSHEET_ID = "1JM-i8_nrGR7-VDEY82QZ5l5JMJTIBOIsuqOSQSrcD3Y";
-var DRIVE_FOLDER_ID = "1tfKH6EOBFdG0c4Wm2MPO-R61NP5mAc0c";
+var SPREADSHEET_ID = ""; // ปลอดภัย: ไม่ใส่ ID บน GitHub (ระบบดึงอัตโนมัติจาก getActiveSpreadsheet)
+var DRIVE_FOLDER_ID = ""; // ปลอดภัย: ดึงจากแผ่น System_Config ใน Google Sheet
+
+/**
+ * ดึง Google Spreadsheet ปัจจุบันโดยอัตโนมัติ
+ */
+function getAppSpreadsheet() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (ss) return ss;
+  } catch (e) {}
+  var id = getSystemConfig("SPREADSHEET_ID", "1JM-i8_nrGR7-VDEY82QZ5l5JMJTIBOIsuqOSQSrcD3Y");
+  return SpreadsheetApp.openById(id);
+}
+
+/**
+ * ดึง Google Drive Folder สำหรับบันทึกรูปภาพ
+ */
+function getAppDriveFolder() {
+  var id = getSystemConfig("DRIVE_FOLDER_ID", "1tfKH6EOBFdG0c4Wm2MPO-R61NP5mAc0c");
+  return DriveApp.getFolderById(id);
+}
 
 var SHEET_LOGS = "Alcohol_Logs";
 var SHEET_DRIVERS = "Registered_Drivers";
@@ -29,7 +49,7 @@ var NOTIFICATION_CONFIG = {
  * ฟังก์ชันเริ่มต้นสร้างตารางและหัวคอลัมน์อัตโนมัติ (รองรับการอัปเกรดตารางเดิม)
  */
 function initialSetup() {
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var ss = getAppSpreadsheet();
   
   // 1. ชีต Alcohol_Logs
   var logSheet = ss.getSheetByName(SHEET_LOGS);
@@ -139,7 +159,14 @@ function getSystemConfig(key, defaultValue) {
     var cached = cache.get("CFG_" + key);
     if (cached !== null) return cached;
     
-    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var ss = null;
+    try {
+      ss = SpreadsheetApp.getActiveSpreadsheet();
+    } catch (e) {}
+    if (!ss && SPREADSHEET_ID) {
+      ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    }
+    if (!ss) return defaultValue || "";
     var sheet = ss.getSheetByName(SHEET_CONFIG);
     if (!sheet) {
       initialSetup();
@@ -341,7 +368,7 @@ function doGet(e) {
 function findDriverByEmail(email) {
   if (!email) return null;
   try {
-    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var ss = getAppSpreadsheet();
     var sheet = ss.getSheetByName(SHEET_DRIVERS);
     if (!sheet) {
       initialSetup();
@@ -384,7 +411,7 @@ function findDriverByEmail(email) {
  */
 function getAllDrivers() {
   try {
-    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var ss = getAppSpreadsheet();
     var sheet = ss.getSheetByName(SHEET_DRIVERS);
     if (!sheet) return [];
     
@@ -449,8 +476,8 @@ function doPost(e) {
     var payload = JSON.parse(rawData);
     var action = payload.action || "submitAlcoholTest";
     
-    var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var folder = getAppDriveFolder();
+    var ss = getAppSpreadsheet();
     var now = new Date();
     
     // -------------------------------------------------------------
