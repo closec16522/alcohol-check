@@ -419,6 +419,16 @@ function doPost(e) {
   try {
     var rawData = e.postData.contents;
     var payload = JSON.parse(rawData);
+
+    // -------------------------------------------------------------
+    // LINE Webhook Verification & Events (ปุ่ม Verify & ค้นหา Group ID อัตโนมัติ)
+    // -------------------------------------------------------------
+    if (payload.events && Array.isArray(payload.events)) {
+      handleLineWebhookEvents(payload.events);
+      return ContentService.createTextOutput(JSON.stringify({ status: "ok" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     var action = payload.action || "submitAlcoholTest";
     
     var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
@@ -772,4 +782,65 @@ function saveBase64ToDrive(base64Data, filename, folder) {
   }
   
   return file;
+}
+
+/**
+ * จัดการอีเวนต์ขาเข้าจาก LINE Webhook (ตอบกลับอัตโนมัติ & ช่วยหา Group ID / User ID)
+ */
+function handleLineWebhookEvents(events) {
+  var lineChannelToken = getSystemConfig("LINE_CHANNEL_ACCESS_TOKEN", NOTIFICATION_CONFIG.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!lineChannelToken) return;
+
+  for (var i = 0; i < events.length; i++) {
+    var event = events[i];
+    var replyToken = event.replyToken;
+    var source = event.source || {};
+    var targetId = source.groupId || source.roomId || source.userId || "";
+
+    // เมื่อแอดมินดึงบอตเข้ากลุ่ม (Join Group)
+    if (event.type === "join") {
+      replyLineMessage(replyToken, lineChannelToken, 
+        "🚚 สวัสดีครับ! บอทตรวจวัดแอลกอฮอล์ หจก. ทั่วไทยขนส่งมงคล เข้าร่วมกลุ่มเรียบร้อยแล้ว\n\n" +
+        "📌 รหัสกลุ่มของคุณ (LINE_TARGET_ID):\n" + targetId + "\n\n" +
+        "👉 นำรหัสนี้ไปใส่ใน Google Sheet แผ่น System_Config ช่อง LINE_TARGET_ID เพื่อรับการแจ้งเตือนรายงานเข้ากลุ่มนี้ได้ทันทีครับ"
+      );
+    }
+
+    // เมื่อมีคนพิมพ์ข้อความหาบอต (Message)
+    else if (event.type === "message" && event.message && event.message.type === "text") {
+      var userText = (event.message.text || "").trim().toLowerCase();
+      if (userText === "id" || userText.indexOf("group") > -1 || userText.indexOf("ไอดี") > -1 || userText.indexOf("รหัส") > -1) {
+        replyLineMessage(replyToken, lineChannelToken,
+          "📌 รหัสสำหรับรับแจ้งเตือนของคุณ:\n" + targetId + "\n\n" +
+          "ประเภท: " + (source.groupId ? "รหัสกลุ่ม (Group ID)" : "รหัสส่วนตัว (User ID)") + "\n\n" +
+          "👉 นำรหัสนี้ไปใส่ใน Google Sheet แผ่น System_Config ช่อง LINE_TARGET_ID ได้เลยครับ"
+        );
+      }
+    }
+  }
+}
+
+/**
+ * ฟังก์ชันตอบกลับข้อความ LINE Messaging API (Reply Message)
+ */
+function replyLineMessage(replyToken, channelAccessToken, textMessage) {
+  if (!replyToken || !channelAccessToken) return;
+  var url = "https://api.line.me/v2/bot/message/reply";
+  var payload = {
+    replyToken: replyToken,
+    messages: [{ type: "text", text: textMessage }]
+  };
+  try {
+    UrlFetchApp.fetch(url, {
+      method: "post",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + channelAccessToken
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+  } catch (err) {
+    Logger.log("replyLineMessage error: " + err.message);
+  }
 }
