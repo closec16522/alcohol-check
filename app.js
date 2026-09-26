@@ -1909,6 +1909,7 @@ async function captureBPSnapshot() {
   appState.bp.photoBase64 = dataUrl;
 
   stopCurrentCamera();
+  videoEl.classList.add("hidden");
 
   imgEl.src = dataUrl;
   imgEl.classList.remove("hidden");
