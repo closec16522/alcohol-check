@@ -13,10 +13,8 @@ const CONFIG = {
   GEMINI_API_KEY: "", // ปลอดภัย: ไม่ใส่คีย์บน GitHub
   GEMINI_MODEL: "gemini-2.5-flash",
 
-  // ใส่ Google Apps Script Web App Deployment URL ที่นี่
+  // ใส่ Google Apps Script Web App Deployment URL ที่นี่ (ทำหน้าที่เป็น API Gateway)
   GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec",
-  SPREADSHEET_ID: "1JM-i8_nrGR7-VDEY82QZ5l5JMJTIBOIsuqOSQSrcD3Y",
-  DRIVE_FOLDER_ID: "1tfKH6EOBFdG0c4Wm2MPO-R61NP5mAc0c",
   LEGAL_LIMIT_MG_PERCENT: 0.00,
   FACE_API_MODELS_URL: "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/",
   FACE_MATCH_THRESHOLD: 0.58, // ค่า Euclidean Distance ที่ยอมรับ (น้อยกว่า = เหมือนกันมาก)
