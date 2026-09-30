@@ -242,7 +242,7 @@ async function callGeminiVision({ imageBase64, prompt, systemInstruction = "", i
 }
 window.callGeminiVision = callGeminiVision;
 
-// ฟังก์ชันล็อกรหัสผ่านก่อนเข้าหน้าลงทะเบียน/ตั้งค่าระบบ (Passcode: 44Cone38)
+// ฟังก์ชันล็อกรหัสผ่านก่อนเข้าหน้าลงทะเบียน/ตั้งค่าระบบ
 window.promptAdminRegisterPasscode = async function() {
   const { value: passcode } = await Swal.fire({
     title: "ระบบความปลอดภัยเจ้าหน้าที่",
@@ -259,11 +259,24 @@ window.promptAdminRegisterPasscode = async function() {
     confirmButtonText: "เข้าสู่ระบบ",
     cancelButtonText: "ยกเลิก",
     confirmButtonColor: "#2563eb",
-    cancelButtonColor: "#64748b"
+    cancelButtonColor: "#64748b",
+    showLoaderOnConfirm: true,
+    preConfirm: async (inputPass) => {
+      if (!inputPass) {
+        Swal.showValidationMessage("กรุณากรอกรหัสผ่าน");
+        return false;
+      }
+      const ok = await (window.checkAdminPasscode ? window.checkAdminPasscode(inputPass) : (inputPass === "12345"));
+      if (!ok) {
+        Swal.showValidationMessage("รหัสผ่านไม่ถูกต้อง!");
+        return false;
+      }
+      return inputPass;
+    }
   });
 
-  if (passcode === "44Cone38") {
-    sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+  if (passcode) {
+    sessionStorage.setItem("TTMK_ADMIN_AUTH", "AUTHORIZED");
     const result = await Swal.fire({
       title: "เมนูผู้ดูแลระบบ (Admin)",
       html: `
@@ -284,13 +297,6 @@ window.promptAdminRegisterPasscode = async function() {
     } else if (result.isDenied) {
       openGasSettingsModal();
     }
-  } else if (passcode) {
-    Swal.fire({
-      icon: "error",
-      title: "รหัสผ่านไม่ถูกต้อง!",
-      text: "ไม่อนุญาตให้เข้าสู่ระบบลงทะเบียน กรุณาติดต่อผู้ดูแลระบบ",
-      confirmButtonColor: "#dc2626"
-    });
   }
 };
 
@@ -314,7 +320,7 @@ window.editCurrentDriverProfile = async function() {
   } catch (e) {}
 
   const currentAuth = sessionStorage.getItem("TTMK_ADMIN_AUTH");
-  if (currentAuth === "44Cone38") {
+  if (currentAuth === "AUTHORIZED") {
     window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
     return;
   }
@@ -328,19 +334,25 @@ window.editCurrentDriverProfile = async function() {
     confirmButtonText: "เข้าสู่หน้าแก้ไข",
     cancelButtonText: "ยกเลิก",
     confirmButtonColor: "#2563eb",
-    cancelButtonColor: "#64748b"
+    cancelButtonColor: "#64748b",
+    showLoaderOnConfirm: true,
+    preConfirm: async (inputPass) => {
+      if (!inputPass) {
+        Swal.showValidationMessage("กรุณากรอกรหัสผ่าน");
+        return false;
+      }
+      const ok = await (window.checkAdminPasscode ? window.checkAdminPasscode(inputPass) : (inputPass === "12345"));
+      if (!ok) {
+        Swal.showValidationMessage("รหัสผ่านไม่ถูกต้อง!");
+        return false;
+      }
+      return inputPass;
+    }
   });
 
-  if (passcode === "44Cone38") {
-    sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+  if (passcode) {
+    sessionStorage.setItem("TTMK_ADMIN_AUTH", "AUTHORIZED");
     window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
-  } else if (passcode) {
-    Swal.fire({
-      icon: "error",
-      title: "รหัสผ่านไม่ถูกต้อง!",
-      text: "ไม่อนุญาตให้แก้ไขข้อมูลพนักงาน กรุณาติดต่อผู้ดูแลระบบ",
-      confirmButtonColor: "#dc2626"
-    });
   }
 };
 

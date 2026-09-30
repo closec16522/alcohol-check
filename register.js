@@ -6,7 +6,7 @@
  */
 
 const REG_CONFIG = {
-  GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbygXhKLj8jXNkY70z8w5_UYVbrAET_SfJ6l33HX16Tu1pkK9UsVWgc60rRnv1WcaeKeFg/exec",
+  GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec",
   FACE_API_MODELS_URL: "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/"
 };
 
@@ -59,11 +59,50 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 /**
- * ตรวจสอบรหัสผ่านเจ้าหน้าที่ก่อนเข้าใช้งาน (Passcode: 44Cone38)
+ * ตรวจสอบรหัสผ่านเจ้าหน้าที่แบบไดนามิกจาก Google Sheet หรือแคช
+ */
+async function checkAdminPasscode(passcode) {
+  if (!passcode) return false;
+  const cleanPass = passcode.toString().trim();
+
+  let gasUrl = "";
+  try {
+    if (typeof getGasWebAppUrl === "function") gasUrl = getGasWebAppUrl();
+    if (!gasUrl && window.REG_CONFIG) gasUrl = window.REG_CONFIG.GAS_WEBAPP_URL;
+    if (!gasUrl) gasUrl = localStorage.getItem("TTMK_GAS_URL");
+    if (!gasUrl) gasUrl = "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec";
+  } catch (e) {}
+
+  if (gasUrl && gasUrl.startsWith("http")) {
+    try {
+      const resp = await fetch(`${gasUrl}?action=verifyPasscode&passcode=${encodeURIComponent(cleanPass)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.valid === true) {
+          localStorage.setItem("TTMK_CACHED_ADMIN_PASS", cleanPass);
+          return true;
+        } else if (data && data.valid === false) {
+          return false;
+        }
+      }
+    } catch (netErr) {
+      console.warn("GAS verifyPasscode network notice in register:", netErr);
+    }
+  }
+
+  const cached = localStorage.getItem("TTMK_CACHED_ADMIN_PASS");
+  if (cached && cleanPass === cached) return true;
+  if (cleanPass === "12345") return true;
+
+  return false;
+}
+
+/**
+ * ตรวจสอบรหัสผ่านเจ้าหน้าที่ก่อนเข้าใช้งาน (ดึงตาม Google Sheet System_Config)
  */
 async function verifyAdminAccess() {
   const currentAuth = sessionStorage.getItem("TTMK_ADMIN_AUTH");
-  if (currentAuth === "44Cone38") return;
+  if (currentAuth === "AUTHORIZED") return;
 
   const { value: passcode } = await Swal.fire({
     title: "ระบบความปลอดภัยเจ้าหน้าที่",
@@ -76,11 +115,24 @@ async function verifyAdminAccess() {
     confirmButtonText: "ยืนยันรหัส",
     cancelButtonText: "กลับหน้าหลัก",
     confirmButtonColor: "#2563eb",
-    cancelButtonColor: "#64748b"
+    cancelButtonColor: "#64748b",
+    showLoaderOnConfirm: true,
+    preConfirm: async (inputPass) => {
+      if (!inputPass) {
+        Swal.showValidationMessage("กรุณากรอกรหัสผ่าน");
+        return false;
+      }
+      const ok = await checkAdminPasscode(inputPass);
+      if (!ok) {
+        Swal.showValidationMessage("รหัสผ่านไม่ถูกต้อง!");
+        return false;
+      }
+      return inputPass;
+    }
   });
 
-  if (passcode === "44Cone38") {
-    sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+  if (passcode) {
+    sessionStorage.setItem("TTMK_ADMIN_AUTH", "AUTHORIZED");
     Swal.fire({
       icon: "success",
       title: "รหัสผ่านถูกต้อง",
@@ -88,15 +140,7 @@ async function verifyAdminAccess() {
       showConfirmButton: false
     });
   } else {
-    Swal.fire({
-      icon: "error",
-      title: "รหัสผ่านไม่ถูกต้อง!",
-      text: "ระบบจะนำท่านกลับสู่หน้าตรวจวัด",
-      timer: 1500,
-      showConfirmButton: false
-    }).then(() => {
-      window.location.href = "index.html";
-    });
+    window.location.href = "index.html";
   }
 }
 

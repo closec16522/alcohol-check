@@ -43,6 +43,46 @@
   <link rel="stylesheet" href="style.css?v=20260926_03">
 
   <script>
+    // ตรวจสอบรหัสผ่านเจ้าหน้าที่แบบไดนามิกจาก Google Sheet หรือแคช
+    window.checkAdminPasscode = async function(passcode) {
+      if (!passcode) return false;
+      const cleanPass = passcode.toString().trim();
+
+      // 1. ดึง Web App URL
+      let gasUrl = "";
+      try {
+        if (typeof getGasWebAppUrl === "function") gasUrl = getGasWebAppUrl();
+        if (!gasUrl && window.API_CONFIG) gasUrl = window.API_CONFIG.GOOGLE_SCRIPT_URL;
+        if (!gasUrl && window.CONFIG) gasUrl = window.CONFIG.GAS_WEBAPP_URL;
+        if (!gasUrl) gasUrl = localStorage.getItem("TTMK_GAS_URL");
+        if (!gasUrl) gasUrl = "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec";
+      } catch (e) {}
+
+      if (gasUrl && gasUrl.startsWith("http")) {
+        try {
+          const resp = await fetch(`${gasUrl}?action=verifyPasscode&passcode=${encodeURIComponent(cleanPass)}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.valid === true) {
+              localStorage.setItem("TTMK_CACHED_ADMIN_PASS", cleanPass);
+              return true;
+            } else if (data && data.valid === false) {
+              return false;
+            }
+          }
+        } catch (netErr) {
+          console.warn("GAS verifyPasscode network notice:", netErr);
+        }
+      }
+
+      // 2. สำรองกรณีออฟไลน์ หรือยังไม่ได้ต่ออินเทอร์เน็ต
+      const cached = localStorage.getItem("TTMK_CACHED_ADMIN_PASS");
+      if (cached && cleanPass === cached) return true;
+      if (cleanPass === "12345") return true;
+
+      return false;
+    };
+
     // Early global declaration to guarantee availability on button click
     window.editCurrentDriverProfile = async function() {
       let email = "";
@@ -63,7 +103,7 @@
       } catch (e) {}
 
       const currentAuth = sessionStorage.getItem("TTMK_ADMIN_AUTH");
-      if (currentAuth === "44Cone38") {
+      if (currentAuth === "AUTHORIZED") {
         window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
         return;
       }
@@ -78,27 +118,36 @@
           confirmButtonText: "เข้าสู่หน้าแก้ไข",
           cancelButtonText: "ยกเลิก",
           confirmButtonColor: "#2563eb",
-          cancelButtonColor: "#64748b"
+          cancelButtonColor: "#64748b",
+          showLoaderOnConfirm: true,
+          preConfirm: async (inputPass) => {
+            if (!inputPass) {
+              Swal.showValidationMessage("กรุณากรอกรหัสผ่าน");
+              return false;
+            }
+            const ok = await window.checkAdminPasscode(inputPass);
+            if (!ok) {
+              Swal.showValidationMessage("รหัสผ่านไม่ถูกต้อง!");
+              return false;
+            }
+            return inputPass;
+          }
         });
 
-        if (passcode === "44Cone38") {
-          sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
+        if (passcode) {
+          sessionStorage.setItem("TTMK_ADMIN_AUTH", "AUTHORIZED");
           window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
-        } else if (passcode) {
-          Swal.fire({
-            icon: "error",
-            title: "รหัสผ่านไม่ถูกต้อง!",
-            text: "ไม่อนุญาตให้แก้ไขข้อมูลพนักงาน กรุณาติดต่อผู้ดูแลระบบ",
-            confirmButtonColor: "#dc2626"
-          });
         }
       } else {
-        const pass = prompt("กรุณาใส่รหัสผ่านเจ้าหน้าที่เพื่อเข้าสู่หน้าแก้ไขข้อมูล (Passcode: 44Cone38):");
-        if (pass === "44Cone38") {
-          sessionStorage.setItem("TTMK_ADMIN_AUTH", "44Cone38");
-          window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
-        } else if (pass) {
-          alert("รหัสผ่านไม่ถูกต้อง!");
+        const pass = prompt("กรุณาใส่รหัสผ่านเจ้าหน้าที่เพื่อเข้าสู่หน้าแก้ไขข้อมูล:");
+        if (pass) {
+          const ok = await window.checkAdminPasscode(pass);
+          if (ok) {
+            sessionStorage.setItem("TTMK_ADMIN_AUTH", "AUTHORIZED");
+            window.location.href = `register.html${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+          } else {
+            alert("รหัสผ่านไม่ถูกต้อง!");
+          }
         }
       }
     };

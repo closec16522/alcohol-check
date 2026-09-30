@@ -175,8 +175,8 @@ function getSystemConfig(key, defaultValue) {
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (data[i][0].toString().trim() === key) {
-        var val = data[i][1] !== undefined ? data[i][1].toString().trim() : "";
-        cache.put("CFG_" + key, val, 300); // แคช 5 นาที
+        var cacheTtl = (key === "ADMIN_PASSCODE") ? 5 : 300;
+        cache.put("CFG_" + key, val, cacheTtl); // รหัสผ่านแคช 5 วินาทีเพื่อให้แก้ในชีตแล้วมีผลทันที คีย์อื่นแคช 5 นาที
         return val || (defaultValue || "");
       }
     }
@@ -200,8 +200,9 @@ function callGeminiFromGas(params) {
   var candidateModels = [
     preferredModel,
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.5-flash"
+    "gemini-2.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-flash"
   ];
 
   var modelsToTry = [];
@@ -375,6 +376,17 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // ตรวจสอบรหัสผ่านแอดมินจาก Google Sheet System_Config
+  if (action === "verifyPasscode") {
+    var inputPass = (e.parameter.passcode || "").toString().trim();
+    var actualPass = getSystemConfig("ADMIN_PASSCODE", "44Cone38").toString().trim();
+    var isValid = (inputPass !== "" && inputPass === actualPass);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      valid: isValid
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   return ContentService.createTextOutput(JSON.stringify({
     success: true,
     system: "ระบบตรวจวัดแอลกอฮอล์และความพร้อมพนักงาน หจก. ทั่วไทยขนส่งมงคล",
@@ -513,6 +525,19 @@ function doPost(e) {
     }
 
     // -------------------------------------------------------------
+    // ACTION 0.5: ตรวจสอบรหัสผ่านแอดมินจาก Google Sheet System_Config
+    // -------------------------------------------------------------
+    if (action === "verifyPasscode") {
+      var postPass = (payload.passcode || "").toString().trim();
+      var actualPassPost = getSystemConfig("ADMIN_PASSCODE", "44Cone38").toString().trim();
+      var isPassValid = (postPass !== "" && postPass === actualPassPost);
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        valid: isPassValid
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // -------------------------------------------------------------
     // ACTION 1: ลงทะเบียนพนักงานใหม่ / อัปเดตรูปหน้าต้นแบบ (Register Master Face)
     // -------------------------------------------------------------
     if (action === "registerDriver") {
@@ -636,7 +661,52 @@ function doPost(e) {
     if (payload.reportImageBase64) {
       var reportFileName = "REPORT_" + driverId + "_" + Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd_HHmmss") + ".jpg";
       var reportFile = saveBase64ToDrive(payload.reportImageBase64, reportFileName, folder);
+      try {
+        reportFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      } catch (shareErr) {}
       reportPhotoUrl = reportFile.getUrl();
+    }
+
+    // ⚡ ส่ง Alert ทันทีตรงนี้ เพื่อให้ LINE แจ้งเตือนเข้าไวที่สุด (ภายใน 1-2 วินาที)
+    var alertText = "📋 [รายงานตรวจวัดพนักงานขับรถขนส่ง]\n" +
+                    "🏢 หจก. ทั่วไทยขนส่งมงคล\n" +
+                    "👤 พนักงาน: " + driverName + " (" + driverId + ")\n" +
+                    "🚚 ทะเบียน: " + vehiclePlate + "\n" +
+                    "🍺 แอลกอฮอล์: " + alcoholVal + " mg% (" + alcoholStatus + ")\n" +
+                    "💓 ความดัน: " + bpSys + "/" + bpDia + " mmHg (ชีพจร " + bpPulse + " bpm) • " + bpStatus + "\n" +
+                    "🎯 สรุปผล: " + overallStatus + "\n" +
+                    "📍 พิกัด GPS: " + gps + "\n" +
+                    "⏰ เวลา: " + fullTimestamp + "\n" +
+                    (reportPhotoUrl !== "-" ? "🖼️ รูปรายงาน: " + reportPhotoUrl : "");
+
+    var alertOnFailOnly = (getSystemConfig("ALERT_ON_FAIL_ONLY", "false") === "true");
+    var isUrgentAlert = (overallStatus !== "ผ่านพร้อมปฏิบัติงาน");
+    if (!alertOnFailOnly || isUrgentAlert) {
+      var lineAlertData = {
+        alertText: alertText,
+        driverName: driverName,
+        driverId: driverId,
+        vehiclePlate: vehiclePlate,
+        alcoholVal: alcoholVal,
+        alcoholStatus: alcoholStatus,
+        bpSys: bpSys,
+        bpDia: bpDia,
+        bpPulse: bpPulse,
+        bpStatus: bpStatus,
+        overallStatus: overallStatus,
+        fullTimestamp: fullTimestamp,
+        reportPhotoUrl: reportPhotoUrl
+      };
+      try {
+        sendLineAlert(lineAlertData);
+      } catch (lineErr) {
+        Logger.log("LINE alert error: " + lineErr.message);
+      }
+      try {
+        sendTelegramAlert(alertText, reportPhotoUrl !== "-" ? reportPhotoUrl : null);
+      } catch (tgErr) {
+        Logger.log("Telegram alert error: " + tgErr.message);
+      }
     }
 
     // 2. จัดเก็บภาพถ่ายใบหน้า Check-in
@@ -700,49 +770,6 @@ function doPost(e) {
       logSheet.getRange(lastRow, 1, 1, logMaxCol).setBackground("#FEE2E2"); // สีแดงอ่อน
     } else {
       logSheet.getRange(lastRow, 1, 1, logMaxCol).setBackground("#ECFDF5"); // สีเขียวอ่อน
-    }
-    
-    // ส่งการแจ้งเตือนไปยัง LINE และ Telegram หลังบ้าน
-    var alertText = "📋 [รายงานตรวจวัดพนักงานขับรถขนส่ง]\n" +
-                    "🏢 หจก. ทั่วไทยขนส่งมงคล\n" +
-                    "👤 พนักงาน: " + driverName + " (" + driverId + ")\n" +
-                    "🚚 ทะเบียน: " + vehiclePlate + "\n" +
-                    "🍺 แอลกอฮอล์: " + alcoholVal + " mg% (" + alcoholStatus + ")\n" +
-                    "💓 ความดัน: " + bpSys + "/" + bpDia + " mmHg (ชีพจร " + bpPulse + " bpm) • " + bpStatus + "\n" +
-                    "🎯 สรุปผล: " + overallStatus + "\n" +
-                    "📍 พิกัด GPS: " + gps + "\n" +
-                    "⏰ เวลา: " + fullTimestamp + "\n" +
-                    (reportPhotoUrl !== "-" ? "🖼️ รูปรายงาน: " + reportPhotoUrl : "");
-
-    var alertOnFailOnly = (getSystemConfig("ALERT_ON_FAIL_ONLY", "false") === "true");
-    var isUrgentAlert = (overallStatus !== "ผ่านพร้อมปฏิบัติงาน");
-    if (!alertOnFailOnly || isUrgentAlert) {
-      try {
-        sendTelegramAlert(alertText, reportPhotoUrl !== "-" ? reportPhotoUrl : null);
-      } catch (tgErr) {
-        Logger.log("Telegram alert error: " + tgErr.message);
-      }
-
-      var lineAlertData = {
-        alertText: alertText,
-        driverName: driverName,
-        driverId: driverId,
-        vehiclePlate: vehiclePlate,
-        alcoholVal: alcoholVal,
-        alcoholStatus: alcoholStatus,
-        bpSys: bpSys,
-        bpDia: bpDia,
-        bpPulse: bpPulse,
-        bpStatus: bpStatus,
-        overallStatus: overallStatus,
-        fullTimestamp: fullTimestamp,
-        reportPhotoUrl: reportPhotoUrl
-      };
-      try {
-        sendLineAlert(lineAlertData);
-      } catch (lineErr) {
-        Logger.log("LINE alert error: " + lineErr.message);
-      }
     }
 
     return ContentService.createTextOutput(JSON.stringify({
@@ -962,6 +989,27 @@ function sendLineAlert(data) {
       });
       Logger.log("LINE Flex Card Push response (" + pushRes.getResponseCode() + "): " + pushRes.getContentText());
       if (pushRes.getResponseCode() === 200) return;
+
+      // หาก LINE ปฏิเสธ Flex Card ให้ส่งแบบ Text Message ทันทีเพื่อไม่ให้พลาดการแจ้งเตือน
+      var fallbackPayload = {
+        to: lineTargetId,
+        messages: [
+          {
+            type: "text",
+            text: alertObj.alertText || "รายงานตรวจวัดพนักงานขับรถ"
+          }
+        ]
+      };
+      UrlFetchApp.fetch(pushUrl, {
+        method: "post",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + lineChannelToken
+        },
+        payload: JSON.stringify(fallbackPayload),
+        muteHttpExceptions: true
+      });
+      return;
     } catch (pushErr) {
       Logger.log("LINE Push error: " + pushErr.message);
     }
