@@ -18,43 +18,11 @@ const CONFIG = {
   LEGAL_LIMIT_MG_PERCENT: 0.00,
   FACE_API_MODELS_URL: "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/",
   FACE_MATCH_THRESHOLD: 0.58, // ค่า Euclidean Distance ที่ยอมรับ (น้อยกว่า = เหมือนกันมาก)
-  
-  // ฐานข้อมูลพนักงานตัวอย่างเริ่มต้น
-  FALLBACK_DRIVERS: [
-    {
-      driverId: "DRV-001",
-      driverName: "นายทวีศักดิ์ คมสัน (Mr.Taweesak)",
-      email: "taweesak.kom@gmail.com",
-      phone: "062-3285963",
-      vehiclePlate: "70-8899 กทม.",
-      department: "แผนกขนส่งด่วนพิเศษ",
-      masterFaceUrl: "",
-      masterFaceDescriptor: null,
-      status: "ACTIVE"
-    },
-    {
-      driverId: "DRV-002",
-      driverName: "นายสมชาย วงศ์สวัสดิ์",
-      email: "somchai.driver@gmail.com",
-      phone: "089-1122334",
-      vehiclePlate: "70-5544 กทม.",
-      department: "แผนกขนส่งภาคเหนือ",
-      masterFaceUrl: "",
-      masterFaceDescriptor: null,
-      status: "ACTIVE"
-    },
-    {
-      driverId: "DRV-003",
-      driverName: "Mr.Taweesak (closec16522)",
-      email: "closec16522@gmail.com",
-      phone: "062-3285963",
-      vehiclePlate: "70-9988 กทม.",
-      department: "แผนกขนส่งด่วนพิเศษ",
-      masterFaceUrl: "",
-      masterFaceDescriptor: null,
-      status: "ACTIVE"
-    }
-  ]
+  // URL สำหรับ Google Apps Script API Gateway
+  GAS_WEBAPP_URL: "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec",
+  LEGAL_LIMIT_MG_PERCENT: 0.00,
+  FACE_API_MODELS_URL: "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/",
+  FACE_MATCH_THRESHOLD: 0.58 // ค่า Euclidean Distance ที่ยอมรับ (น้อยกว่า = เหมือนกันมาก)
 };
 
 // ฟังก์ชันแสดงปุ่มล็อกอินด่วน 1-คลิก (เฉพาะ Email เดียวที่เคยกรอกล่าสุด)
@@ -87,13 +55,18 @@ window.quickSelectLastDriver = function() {
 window.quickSelectDriver = window.quickSelectLastDriver;
 
 
-// ฟังก์ชันดึง Google Apps Script Web App URL ที่พร้อมใช้งาน (จาก LocalStorage หรือ CONFIG)
+// ฟังก์ชันดึง Google Apps Script Web App URL ที่พร้อมใช้งาน (ดึงตาม URL ปัจจุบันและแก้ไขค่าเก่าอัตโนมัติ)
 function getGasWebAppUrl() {
+  const activeUrl = "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec";
   const localUrl = localStorage.getItem("TTMK_GAS_URL");
   if (localUrl && localUrl.trim().startsWith("https://script.google.com/macros/s/")) {
+    if (localUrl.includes("AKfycbygXhKL") || localUrl.includes("REPLACE_WITH")) {
+      localStorage.setItem("TTMK_GAS_URL", activeUrl);
+      return activeUrl;
+    }
     return localUrl.trim();
   }
-  return CONFIG.GAS_WEBAPP_URL;
+  return activeUrl;
 }
 window.getGasWebAppUrl = getGasWebAppUrl;
 
@@ -533,19 +506,55 @@ async function loadFaceModels() {
 }
 
 /**
- * ตรวจสอบระบบจำข้อมูลอัตโนมัติบนอุปกรณ์นี้ (Auto-Login via LocalStorage)
+ * ตรวจสอบระบบจำข้อมูลอัตโนมัติบนอุปกรณ์นี้ (Auto-Login และซิงก์ตรงกับ Sheet Registered_Drivers)
  */
-function checkAutoLogin() {
+async function checkAutoLogin() {
   const savedData = localStorage.getItem("TTMK_DRIVER_PROFILE");
   if (!savedData) return;
 
   try {
     const driver = JSON.parse(savedData);
-    if (driver && driver.email) {
-      localStorage.setItem("TTMK_LAST_EMAIL", driver.email.toLowerCase().trim());
-      renderQuickRecentEmail();
-      console.log("Auto-Login detected from LocalStorage:", driver.driverName);
-      applyDriverData(driver, true);
+    if (!driver || !driver.email) return;
+
+    const email = driver.email.toLowerCase().trim();
+    localStorage.setItem("TTMK_LAST_EMAIL", email);
+    renderQuickRecentEmail();
+
+    // แสดงผลข้อมูลที่จำไว้ก่อนเบื้องต้น
+    applyDriverData(driver, true);
+
+    // ตรวจสอบความถูกต้องและอัปเดตข้อมูลล่าสุดจากชีต Registered_Drivers เสมอ
+    const currentGasUrl = getGasWebAppUrl();
+    if (currentGasUrl && !currentGasUrl.includes("REPLACE_WITH")) {
+      try {
+        const response = await fetch(`${currentGasUrl}?action=checkEmail&email=${encodeURIComponent(email)}`);
+        const data = await response.json();
+        if (data && data.success && data.driver) {
+          if (data.driver.status && data.driver.status.toUpperCase() !== "ACTIVE") {
+            console.warn("Driver status inactive in Registered_Drivers:", data.driver.status);
+            switchUser();
+            return;
+          }
+          // อัปเดตข้อมูลล่าสุดจากชีต Registered_Drivers ลงสถานะและ LocalStorage
+          applyDriverData(data.driver, true);
+        } else {
+          // หากไม่มีในชีต Registered_Drivers แล้ว ให้ยกเลิกการจำข้อมูลอัตโนมัติ
+          console.warn("Driver email not found in Registered_Drivers sheet, resetting auto-login.");
+          localStorage.removeItem("TTMK_DRIVER_PROFILE");
+          appState.driver = null;
+          const banner = document.getElementById("autoLoginBanner");
+          if (banner) banner.classList.add("hidden");
+          const card = document.getElementById("driverProfileCard");
+          if (card) card.classList.add("hidden");
+          const btnNext = document.getElementById("btnNextToStep2");
+          if (btnNext) {
+            btnNext.setAttribute("disabled", "true");
+            btnNext.className = "w-full py-3 px-4 bg-slate-300 text-slate-500 font-semibold rounded-xl text-sm transition shadow flex items-center justify-center space-x-2 cursor-not-allowed";
+          }
+        }
+      } catch (gasErr) {
+        console.warn("Registered_Drivers auto-sync notice:", gasErr);
+      }
     }
   } catch (e) {
     console.warn("Auto-login parse error:", e);
@@ -768,7 +777,7 @@ function goToStep(stepNumber) {
 }
 
 // =========================================================================
-// STEP 1: Email Lookup, Google One Tap & Driver Authentication
+// STEP 1: Email Lookup & Driver Authentication (Strictly from Registered_Drivers Sheet)
 // =========================================================================
 async function handleEmailLookup(providedEmail, providedName) {
   const emailInput = document.getElementById("driverEmailInput");
@@ -789,7 +798,7 @@ async function handleEmailLookup(providedEmail, providedName) {
 
   Swal.fire({
     title: "กำลังตรวจสอบข้อมูล...",
-    html: `<div class="text-xs text-slate-500">กำลังค้นหาข้อมูลพนักงานในระบบ หจก. ทั่วไทยขนส่งมงคล</div>`,
+    html: `<div class="text-xs text-slate-500">กำลังตรวจสอบข้อมูลพนักงานจากฐานข้อมูลชีต Registered_Drivers...</div>`,
     allowOutsideClick: false,
     didOpen: () => {
       Swal.showLoading();
@@ -798,13 +807,13 @@ async function handleEmailLookup(providedEmail, providedName) {
 
   let driverFound = null;
 
-  // 1. ค้นหาจาก Google Apps Script Backend ก่อน
+  // ค้นหาโดยตรงจากชีต Registered_Drivers ผ่าน Google Apps Script API
   const currentGasUrl = getGasWebAppUrl();
-  if (currentGasUrl && !currentGasUrl.includes("REPLACE_WITH_YOUR_DEPLOYMENT_ID")) {
+  if (currentGasUrl && !currentGasUrl.includes("REPLACE_WITH")) {
     try {
       const response = await fetch(`${currentGasUrl}?action=checkEmail&email=${encodeURIComponent(email)}`);
       const data = await response.json();
-      if (data.success && data.driver) {
+      if (data && data.success && data.driver) {
         driverFound = data.driver;
       }
     } catch (e) {
@@ -812,63 +821,49 @@ async function handleEmailLookup(providedEmail, providedName) {
     }
   }
 
-  // 2. ถ้าไม่พบ ให้ตรวจใน LocalStorage
-  if (!driverFound) {
-    const localProfile = localStorage.getItem("TTMK_DRIVER_PROFILE");
-    if (localProfile) {
-      const parsed = JSON.parse(localProfile);
-      if (parsed.email && parsed.email.toLowerCase() === email) {
-        driverFound = parsed;
-      }
-    }
-  }
-
-  // 3. ตรวจสอบใน Fallback List
-  if (!driverFound) {
-    driverFound = CONFIG.FALLBACK_DRIVERS.find(d => d.email.toLowerCase() === email);
-  }
-
-  // 4. หากยังไม่พบ พนักงานอาจยังไม่ได้ลงทะเบียน
+  // หากไม่พบข้อมูลในชีต Registered_Drivers
   if (!driverFound) {
     Swal.close();
     const result = await Swal.fire({
-      icon: "question",
-      title: "ยังไม่พบข้อมูลในระบบ",
+      icon: "warning",
+      title: "ไม่พบข้อมูลในทะเบียนพนักงาน",
       html: `
-        <p class="text-xs text-slate-600 mb-2">อีเมล <b>${email}</b> ยังไม่มีในฐานข้อมูลทะเบียนพนักงาน</p>
-        <p class="text-xs text-blue-600 font-semibold">แนะนำให้ลงทะเบียนพร้อมถ่ายรูปหน้าต้นแบบ 1:1 ครั้งแรก</p>
+        <div class="text-xs text-slate-600 text-left space-y-2 mb-2">
+          <p>อีเมล <b>${email}</b> ยังไม่มีในฐานข้อมูลชีต <code>Registered_Drivers</code></p>
+          <p class="text-red-500 font-semibold">⚠️ ระบบไม่อนุญาตให้ตรวจวัดหากยังไม่ได้ลงทะเบียนและบันทึกภาพหน้าต้นแบบ</p>
+        </div>
       `,
       showCancelButton: true,
-      confirmButtonText: "ไปหน้าลงทะเบียนใหม่",
-      cancelButtonText: "ใช้ตรวจชั่วคราว",
+      confirmButtonText: "ไปลงทะเบียนพนักงานใหม่",
+      cancelButtonText: "ยกเลิก / ปิด",
       confirmButtonColor: "#16a34a",
       cancelButtonColor: "#64748b"
     });
 
     if (result.isConfirmed) {
-      window.location.href = "register.html";
-      return;
-    } else {
-      driverFound = {
-        driverId: "DRV-GUEST-" + Math.floor(1000 + Math.random() * 9000),
-        driverName: providedName || email.split("@")[0].toUpperCase(),
-        email: email,
-        phone: "-",
-        vehiclePlate: "รอระบุ",
-        department: "พนักงานขนส่ง",
-        masterFacePhoto: null,
-        masterFaceDescriptor: null,
-        status: "TEMP"
-      };
+      window.location.href = `register.html?email=${encodeURIComponent(email)}`;
     }
+    return;
   }
 
+  // ตรวจสอบสถานะการใช้งาน (Status ต้องเป็น ACTIVE)
+  if (driverFound.status && driverFound.status.toUpperCase() !== "ACTIVE") {
+    Swal.fire({
+      icon: "error",
+      title: "สถานะพนักงานถูกระงับการใช้งาน",
+      text: `พนักงาน ${driverFound.driverName} มีสถานะเป็น "${driverFound.status}" โปรดติดต่อเจ้าหน้าที่`,
+      confirmButtonColor: "#2563eb"
+    });
+    return;
+  }
+
+  // ยืนยันข้อมูลสำเร็จ นำข้อมูลจาก Sheet ไปใช้งาน
   applyDriverData(driverFound, false);
 
   Swal.fire({
     icon: "success",
-    title: "ยืนยันข้อมูลเรียบร้อย",
-    text: `ยินดีต้อนรับ: ${driverFound.driverName}`,
+    title: "ยืนยันข้อมูลพนักงานสำเร็จ",
+    text: `ยินดีต้อนรับ: ${driverFound.driverName} (${driverFound.driverId || ''})`,
     timer: 1400,
     showConfirmButton: false
   });

@@ -11,11 +11,16 @@ const REG_CONFIG = {
 };
 
 function getGasWebAppUrl() {
+  const activeUrl = "https://script.google.com/macros/s/AKfycbxbyJ1yWNodowMh-OLxqBuFvH-Pk-TLwg7dRv_lwT7bbTJBu5MH_lhqxE3KwJ7lDH407g/exec";
   const localUrl = localStorage.getItem("TTMK_GAS_URL");
   if (localUrl && localUrl.trim().startsWith("https://script.google.com/macros/s/")) {
+    if (localUrl.includes("AKfycbygXhKL") || localUrl.includes("REPLACE_WITH")) {
+      localStorage.setItem("TTMK_GAS_URL", activeUrl);
+      return activeUrl;
+    }
     return localUrl.trim();
   }
-  return REG_CONFIG.GAS_WEBAPP_URL;
+  return activeUrl;
 }
 
 function saveGasWebAppUrl(url) {

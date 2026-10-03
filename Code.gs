@@ -328,16 +328,49 @@ function ensureColumnsMatch(sheet, requiredHeaders, headerBgColor) {
 }
 
 /**
- * คืนค่า Map ตำแหน่งคอลัมน์ตามชื่อ Header
+ * คืนค่า Map ตำแหน่งคอลัมน์ตามชื่อ Header (รองรับทั้งชื่อภาษาอังกฤษและภาษาไทย)
  */
 function getColumnIndexMap(sheet) {
   var lastCol = Math.max(1, sheet.getLastColumn());
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var map = {};
   for (var i = 0; i < headers.length; i++) {
-    var key = headers[i].toString().trim();
-    if (key) {
-      map[key] = i + 1; // 1-based column index
+    var rawKey = headers[i].toString().trim();
+    if (!rawKey) continue;
+    var colIdx = i + 1;
+    map[rawKey] = colIdx;
+    
+    // แมปชื่อเรียกอื่นๆ ให้ตรงกันเสมอ
+    var lower = rawKey.toLowerCase();
+    if (lower.indexOf("driver_id") > -1 || lower.indexOf("driverid") > -1 || rawKey.indexOf("รหัส") > -1) {
+      map["Driver_ID"] = colIdx;
+    }
+    if (lower.indexOf("driver_name") > -1 || lower.indexOf("drivername") > -1 || rawKey.indexOf("ชื่อ") > -1) {
+      map["Driver_Name"] = colIdx;
+    }
+    if (lower.indexOf("email") > -1 || rawKey.indexOf("อีเมล") > -1) {
+      map["Email"] = colIdx;
+    }
+    if (lower.indexOf("phone") > -1 || lower.indexOf("tel") > -1 || rawKey.indexOf("โทร") > -1) {
+      map["Phone"] = colIdx;
+    }
+    if (lower.indexOf("vehicle") > -1 || lower.indexOf("plate") > -1 || rawKey.indexOf("ทะเบียน") > -1) {
+      map["Vehicle_Plate"] = colIdx;
+    }
+    if (lower.indexOf("dept") > -1 || lower.indexOf("department") > -1 || rawKey.indexOf("แผนก") > -1) {
+      map["Department"] = colIdx;
+    }
+    if (lower.indexOf("status") > -1 || rawKey.indexOf("สถานะ") > -1) {
+      map["Status"] = colIdx;
+    }
+    if (lower.indexOf("master_face") > -1 || lower.indexOf("face_url") > -1 || rawKey.indexOf("รูป") > -1) {
+      map["Master_Face_URL"] = colIdx;
+    }
+    if (lower.indexOf("descriptor") > -1 || lower.indexOf("vector") > -1 || rawKey.indexOf("เวกเตอร์") > -1) {
+      map["Face_Descriptor_JSON"] = colIdx;
+    }
+    if (lower.indexOf("registered_date") > -1 || lower.indexOf("reg_date") > -1 || rawKey.indexOf("วันที่") > -1) {
+      map["Registered_Date"] = colIdx;
     }
   }
   return map;
@@ -413,22 +446,31 @@ function findDriverByEmail(email) {
     var data = sheet.getDataRange().getValues();
     if (data.length <= 1) return null;
     
+    var idCol = (colMap["Driver_ID"] || 1) - 1;
+    var nameCol = (colMap["Driver_Name"] || 2) - 1;
     var emailColIdx = (colMap["Email"] || 3) - 1;
+    var phoneCol = (colMap["Phone"] || 4) - 1;
+    var plateCol = (colMap["Vehicle_Plate"] || 5) - 1;
+    var deptCol = (colMap["Department"] || 6) - 1;
+    var statusCol = (colMap["Status"] || 7) - 1;
+    var masterCol = (colMap["Master_Face_URL"] || 8) - 1;
+    var descCol = (colMap["Face_Descriptor_JSON"] || 9) - 1;
+    var dateCol = (colMap["Registered_Date"] || 10) - 1;
     
     for (var i = 1; i < data.length; i++) {
       var rowEmail = (data[i][emailColIdx] || "").toString().trim().toLowerCase();
       if (rowEmail === email) {
         return {
-          driverId: data[i][(colMap["Driver_ID"] || 1) - 1] || "",
-          driverName: data[i][(colMap["Driver_Name"] || 2) - 1] || "",
-          email: data[i][(colMap["Email"] || 3) - 1] || "",
-          phone: data[i][(colMap["Phone"] || 4) - 1] || "",
-          vehiclePlate: data[i][(colMap["Vehicle_Plate"] || 5) - 1] || "",
-          department: data[i][(colMap["Department"] || 6) - 1] || "",
-          status: data[i][(colMap["Status"] || 7) - 1] || "ACTIVE",
-          masterFaceUrl: colMap["Master_Face_URL"] ? (data[i][colMap["Master_Face_URL"] - 1] || "") : "",
-          faceDescriptor: colMap["Face_Descriptor_JSON"] ? (data[i][colMap["Face_Descriptor_JSON"] - 1] || "") : "",
-          registeredDate: colMap["Registered_Date"] ? (data[i][colMap["Registered_Date"] - 1] || "") : ""
+          driverId: data[i][idCol] || "",
+          driverName: data[i][nameCol] || "",
+          email: data[i][emailColIdx] || "",
+          phone: data[i][phoneCol] || "",
+          vehiclePlate: data[i][plateCol] || "",
+          department: data[i][deptCol] || "",
+          status: data[i][statusCol] || "ACTIVE",
+          masterFaceUrl: data[i][masterCol] || "",
+          faceDescriptor: data[i][descCol] || "",
+          registeredDate: data[i][dateCol] || ""
         };
       }
     }
@@ -567,8 +609,20 @@ function doPost(e) {
         masterFaceUrl = masterFile.getUrl();
       }
       
+      // ดึงหมายเลขคอลัมน์มาตรฐาน (หากไม่พบคอลัมน์ใน Sheet ให้ใช้ลำดับ 1 ถึง 10 ตามค่าเริ่มต้น)
+      var idCol = colMap["Driver_ID"] || 1;
+      var nameCol = colMap["Driver_Name"] || 2;
+      var emailCol = colMap["Email"] || 3;
+      var phoneCol = colMap["Phone"] || 4;
+      var plateCol = colMap["Vehicle_Plate"] || 5;
+      var deptCol = colMap["Department"] || 6;
+      var statusCol = colMap["Status"] || 7;
+      var masterCol = colMap["Master_Face_URL"] || 8;
+      var descCol = colMap["Face_Descriptor_JSON"] || 9;
+      var regDateCol = colMap["Registered_Date"] || 10;
+      
       // ตรวจสอบว่ามีอีเมลนี้อยู่แล้วหรือไม่
-      var emailColIdx = (colMap["Email"] || 3) - 1;
+      var emailColIdx = emailCol - 1;
       var driverData = driverSheet.getDataRange().getValues();
       var targetRow = -1;
       for (var k = 1; k < driverData.length; k++) {
@@ -579,32 +633,32 @@ function doPost(e) {
       }
       
       if (targetRow > 0) {
-        // อัปเดตแถวเดิมตามชื่อคอลัมน์
-        if (colMap["Driver_ID"]) driverSheet.getRange(targetRow, colMap["Driver_ID"]).setValue(regDriverId);
-        if (colMap["Driver_Name"]) driverSheet.getRange(targetRow, colMap["Driver_Name"]).setValue(regName);
-        if (colMap["Phone"]) driverSheet.getRange(targetRow, colMap["Phone"]).setValue(regPhone);
-        if (colMap["Vehicle_Plate"]) driverSheet.getRange(targetRow, colMap["Vehicle_Plate"]).setValue(regPlate);
-        if (colMap["Department"]) driverSheet.getRange(targetRow, colMap["Department"]).setValue(regDept);
-        if (colMap["Status"]) driverSheet.getRange(targetRow, colMap["Status"]).setValue("ACTIVE");
-        if (colMap["Master_Face_URL"] && masterFaceUrl) driverSheet.getRange(targetRow, colMap["Master_Face_URL"]).setValue(masterFaceUrl);
-        if (colMap["Face_Descriptor_JSON"] && descriptorJson) driverSheet.getRange(targetRow, colMap["Face_Descriptor_JSON"]).setValue(descriptorJson);
-        if (colMap["Registered_Date"]) driverSheet.getRange(targetRow, colMap["Registered_Date"]).setValue(dateStr);
+        // อัปเดตแถวเดิม
+        driverSheet.getRange(targetRow, idCol).setValue(regDriverId);
+        driverSheet.getRange(targetRow, nameCol).setValue(regName);
+        driverSheet.getRange(targetRow, phoneCol).setValue(regPhone);
+        driverSheet.getRange(targetRow, plateCol).setValue(regPlate);
+        driverSheet.getRange(targetRow, deptCol).setValue(regDept);
+        driverSheet.getRange(targetRow, statusCol).setValue("ACTIVE");
+        if (masterFaceUrl) driverSheet.getRange(targetRow, masterCol).setValue(masterFaceUrl);
+        if (descriptorJson) driverSheet.getRange(targetRow, descCol).setValue(descriptorJson);
+        driverSheet.getRange(targetRow, regDateCol).setValue(dateStr);
       } else {
         // เพิ่มแถวใหม่
+        var maxCol = Math.max(driverSheet.getLastColumn(), 10);
         var newRow = [];
-        var maxCol = driverSheet.getLastColumn();
-        for (var c = 1; c <= maxCol; c++) newRow.push("");
+        for (var c = 0; c < maxCol; c++) newRow.push("");
         
-        if (colMap["Driver_ID"]) newRow[colMap["Driver_ID"] - 1] = regDriverId;
-        if (colMap["Driver_Name"]) newRow[colMap["Driver_Name"] - 1] = regName;
-        if (colMap["Email"]) newRow[colMap["Email"] - 1] = regEmail;
-        if (colMap["Phone"]) newRow[colMap["Phone"] - 1] = regPhone;
-        if (colMap["Vehicle_Plate"]) newRow[colMap["Vehicle_Plate"] - 1] = regPlate;
-        if (colMap["Department"]) newRow[colMap["Department"] - 1] = regDept;
-        if (colMap["Status"]) newRow[colMap["Status"] - 1] = "ACTIVE";
-        if (colMap["Master_Face_URL"]) newRow[colMap["Master_Face_URL"] - 1] = masterFaceUrl;
-        if (colMap["Face_Descriptor_JSON"]) newRow[colMap["Face_Descriptor_JSON"] - 1] = descriptorJson;
-        if (colMap["Registered_Date"]) newRow[colMap["Registered_Date"] - 1] = dateStr;
+        newRow[idCol - 1] = regDriverId;
+        newRow[nameCol - 1] = regName;
+        newRow[emailCol - 1] = regEmail;
+        newRow[phoneCol - 1] = regPhone;
+        newRow[plateCol - 1] = regPlate;
+        newRow[deptCol - 1] = regDept;
+        newRow[statusCol - 1] = "ACTIVE";
+        newRow[masterCol - 1] = masterFaceUrl;
+        newRow[descCol - 1] = descriptorJson;
+        newRow[regDateCol - 1] = dateStr;
         
         driverSheet.appendRow(newRow);
       }
